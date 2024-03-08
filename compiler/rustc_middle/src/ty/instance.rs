@@ -15,6 +15,8 @@ use rustc_span::Symbol;
 use std::assert_matches::assert_matches;
 use std::fmt;
 
+use serde::Serialize;
+
 /// A monomorphized `InstanceDef`.
 ///
 /// Monomorphization happens on-the-fly and no monomorphized MIR is ever created. Instead, this type
@@ -25,6 +27,7 @@ use std::fmt;
 /// rustc_codegen_cranelift when the `jit` feature is enabled.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug, TyEncodable, TyDecodable)]
 #[derive(HashStable, Lift, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct Instance<'tcx> {
     pub def: InstanceDef<'tcx>,
     pub args: GenericArgsRef<'tcx>,
@@ -32,6 +35,7 @@ pub struct Instance<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[derive(TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub enum InstanceDef<'tcx> {
     /// A user-defined callable item.
     ///

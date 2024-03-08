@@ -12,6 +12,8 @@ use std::ops::Deref;
 use std::ptr;
 use std::slice;
 
+use serde::Serialize;
+
 /// `List<T>` is a bit like `&[T]`, but with some critical differences.
 /// - IMPORTANT: Every `List<T>` is *required* to have unique contents. The
 ///   type's correctness relies on this, *but it does not enforce it*.
@@ -28,6 +30,7 @@ use std::slice;
 /// - `T` must be `Copy`. This lets `List<T>` be stored in a dropless arena and
 ///   iterators return a `T` rather than a `&T`.
 /// - `T` must not be zero-sized.
+#[derive(Serialize)]
 #[repr(C)]
 pub struct List<T> {
     len: usize,

@@ -39,6 +39,8 @@ use rustc_type_ir::TypeAndMut as IrTypeAndMut;
 use super::fold::FnMutDelegate;
 use super::GenericParamDefKind;
 
+use serde::Serialize;
+
 // Re-export and re-parameterize some `I = TyCtxt<'tcx>` types here
 #[rustc_diagnostic_item = "TyKind"]
 pub type TyKind<'tcx> = IrTyKind<TyCtxt<'tcx>>;
@@ -871,6 +873,7 @@ impl<'tcx> InlineConstArgs<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, TyEncodable, TyDecodable)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub enum BoundVariableKind {
     Ty(BoundTyKind),
     Region(BoundRegionKind),
@@ -911,6 +914,7 @@ impl BoundVariableKind {
 /// `Decodable` and `Encodable` are implemented for `Binder<T>` using the `impl_binder_encode_decode!` macro.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[derive(HashStable, Lift)]
+#[derive(Serialize)]
 pub struct Binder<'tcx, T> {
     value: T,
     bound_vars: &'tcx List<BoundVariableKind>,
@@ -1112,6 +1116,7 @@ where
 /// * For an opaque type, there is no explicit syntax.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable, TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub struct AliasTy<'tcx> {
     /// The parameters of the associated or opaque item.
     ///
@@ -1281,6 +1286,7 @@ pub struct GenSig<'tcx> {
 /// - `c_variadic`: indicates whether this is a C-variadic function.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable, TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub struct FnSig<'tcx> {
     pub inputs_and_output: &'tcx List<Ty<'tcx>>,
     pub c_variadic: bool,
@@ -1361,6 +1367,7 @@ pub type CanonicalPolyFnSig<'tcx> = Canonical<'tcx, Binder<'tcx, FnSig<'tcx>>>;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub struct ParamTy {
     pub index: u32,
     pub name: Symbol,
@@ -1406,6 +1413,7 @@ impl ParamConst {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub struct BoundTy {
     pub var: BoundVar,
     pub kind: BoundTyKind,
@@ -1413,6 +1421,7 @@ pub struct BoundTy {
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, TyEncodable, TyDecodable)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub enum BoundTyKind {
     Anon,
     Param(DefId, Symbol),

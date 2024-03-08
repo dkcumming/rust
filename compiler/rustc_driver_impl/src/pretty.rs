@@ -6,7 +6,8 @@ use rustc_errors::FatalError;
 use rustc_hir as hir;
 use rustc_hir_pretty as pprust_hir;
 use rustc_middle::bug;
-use rustc_middle::mir::{write_mir_graphviz, write_mir_pretty};
+// use rustc_middle::mir::{write_mir_graphviz, write_mir_pretty, write_mir_json};
+use rustc_middle::mir::{write_mir_graphviz, write_mir_json};
 use rustc_middle::ty::{self, TyCtxt};
 use rustc_session::config::{OutFileName, PpHirMode, PpMode, PpSourceMode};
 use rustc_session::Session;
@@ -320,7 +321,8 @@ pub fn print<'tcx>(sess: &Session, ppm: PpMode, ex: PrintExtra<'tcx>) {
         }
         Mir => {
             let mut out = Vec::new();
-            write_mir_pretty(ex.tcx(), None, &mut out).unwrap();
+            // write_mir_pretty(ex.tcx(), None, &mut out).unwrap();
+            write_mir_json(ex.tcx(), None, &mut out).unwrap();
             String::from_utf8(out).unwrap()
         }
         MirCFG => {

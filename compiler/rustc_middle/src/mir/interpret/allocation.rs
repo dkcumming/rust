@@ -27,6 +27,8 @@ use provenance_map::*;
 
 pub use init_mask::{InitChunk, InitChunkIter};
 
+use serde::Serialize;
+
 /// Functionality required for the bytes of an `Allocation`.
 pub trait AllocBytes:
     Clone + fmt::Debug + Eq + PartialEq + Hash + Deref<Target = [u8]> + DerefMut<Target = [u8]>
@@ -62,6 +64,7 @@ impl AllocBytes for Box<[u8]> {
 // hashed. (see the `Hash` impl below for more details), so the impl is not derived.
 #[derive(Clone, Eq, PartialEq, TyEncodable, TyDecodable)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub struct Allocation<Prov: Provenance = CtfeProvenance, Extra = (), Bytes = Box<[u8]>> {
     /// The actual bytes of the allocation.
     /// Note that the bytes of a pointer represent the offset of the pointer.
@@ -141,6 +144,7 @@ impl hash::Hash for Allocation {
 /// means that both the inner type (`Allocation`) and the outer type
 /// (`ConstAllocation`) are used quite a bit.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, HashStable)]
+#[derive(Serialize)]
 #[rustc_pass_by_value]
 pub struct ConstAllocation<'tcx>(pub Interned<'tcx, Allocation>);
 

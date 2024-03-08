@@ -8,6 +8,8 @@ use std::ops::Deref;
 
 use crate::{DebruijnIndex, TypeFlags};
 
+use serde::Serialize;
+
 /// A helper type that you can wrap round your own type in order to automatically
 /// cache the stable hash, type flags and debruijn index on creation and
 /// not recompute it whenever the information is needed.
@@ -16,6 +18,7 @@ use crate::{DebruijnIndex, TypeFlags};
 /// This is useful if you have values that you intern but never (can?) use for stable
 /// hashing.
 #[derive(Copy, Clone)]
+#[derive(Serialize)]
 pub struct WithCachedTypeInfo<T> {
     pub internee: T,
 

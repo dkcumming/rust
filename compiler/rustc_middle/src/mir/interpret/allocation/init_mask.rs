@@ -11,6 +11,8 @@ use rustc_type_ir::{TyDecoder, TyEncoder};
 
 use super::AllocRange;
 
+use serde::Serialize;
+
 type Block = u64;
 
 /// A bitmask where each bit refers to the byte with the same index. If the bit is `true`, the byte
@@ -20,12 +22,14 @@ type Block = u64;
 /// fully initialized or fully uninitialized const allocation, so we can only store that single
 /// value.
 #[derive(Clone, Debug, Eq, PartialEq, TyEncodable, TyDecodable, Hash, HashStable)]
+#[derive(Serialize)]
 pub struct InitMask {
     blocks: InitMaskBlocks,
     len: Size,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, TyEncodable, TyDecodable, Hash, HashStable)]
+#[derive(Serialize)]
 enum InitMaskBlocks {
     Lazy {
         /// Whether the lazy init mask is fully initialized or uninitialized.
@@ -185,6 +189,7 @@ impl InitMask {
 // Note: for performance reasons when interning, some of the fields can be partially
 // hashed. (see the `Hash` impl below for more details), so the impl is not derived.
 #[derive(Clone, Debug, Eq, PartialEq, HashStable)]
+#[derive(Serialize)]
 struct InitMaskMaterialized {
     blocks: Vec<Block>,
 }

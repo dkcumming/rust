@@ -18,6 +18,8 @@ use std::fmt::{self, Debug};
 
 use super::{ConstValue, SourceInfo};
 
+use serde::Serialize;
+
 #[derive(Copy, Clone, PartialEq, TyEncodable, TyDecodable, HashStable, Debug)]
 pub enum UnsafetyViolationKind {
     /// Unsafe operation outside `unsafe`.
@@ -83,11 +85,13 @@ rustc_index::newtype_index! {
     #[derive(HashStable)]
     #[encodable]
     #[debug_format = "_{}"]
+    #[derive(Serialize)]
     pub struct CoroutineSavedLocal {}
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[derive(TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct CoroutineSavedTy<'tcx> {
     pub ty: Ty<'tcx>,
     /// Source info corresponding to the local in the original MIR body.
@@ -99,6 +103,7 @@ pub struct CoroutineSavedTy<'tcx> {
 /// The layout of coroutine state.
 #[derive(Clone, PartialEq, Eq)]
 #[derive(TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct CoroutineLayout<'tcx> {
     /// The type of every local stored inside the coroutine.
     pub field_tys: IndexVec<CoroutineSavedLocal, CoroutineSavedTy<'tcx>>,

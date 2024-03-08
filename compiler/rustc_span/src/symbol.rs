@@ -16,6 +16,8 @@ use std::str;
 
 use crate::{with_session_globals, Edition, Span, DUMMY_SP};
 
+use serde::Serialize;
+
 #[cfg(test)]
 mod tests;
 
@@ -2152,10 +2154,12 @@ impl fmt::Display for MacroRulesNormalizedIdent {
 /// Note that `Symbol` cannot directly be a `rustc_index::newtype_index!` because it
 /// implements `fmt::Debug`, `Encodable`, and `Decodable` in special ways.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize)]
 pub struct Symbol(SymbolIndex);
 
 rustc_index::newtype_index! {
     #[orderable]
+    #[derive(Serialize)]
     struct SymbolIndex {}
 }
 

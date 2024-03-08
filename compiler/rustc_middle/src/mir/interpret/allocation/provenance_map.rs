@@ -9,9 +9,12 @@ use rustc_target::abi::{HasDataLayout, Size};
 use super::{alloc_range, AllocError, AllocRange, AllocResult, CtfeProvenance, Provenance};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 
+use serde::Serialize;
+
 /// Stores the provenance information of pointers stored in memory.
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub struct ProvenanceMap<Prov = CtfeProvenance> {
     /// `Provenance` in this map applies from the given offset for an entire pointer-size worth of
     /// bytes. Two entries in this map are always at least a pointer size apart.

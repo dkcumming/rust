@@ -6,6 +6,8 @@ use crate::{DebruijnIndex, DebugWithInfcx, InferCtxtLike, Interner, WithInfcx};
 
 use self::RegionKind::*;
 
+use serde::Serialize;
+
 /// Representation of regions. Note that the NLL checker uses a distinct
 /// representation of regions. For this reason, it internally replaces all the
 /// regions with inference variables -- the index of the variable is then used
@@ -122,6 +124,7 @@ use self::RegionKind::*;
     Ord = "feature_allow_slow_enum",
     Hash(bound = "")
 )]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(TyEncodable, TyDecodable))]
 pub enum RegionKind<I: Interner> {
     /// A region parameter; for example `'a` in `impl<'a> Trait for &'a ()`.

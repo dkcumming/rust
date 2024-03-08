@@ -8,6 +8,8 @@ mod index_map;
 
 pub use index_map::SortedIndexMultiMap;
 
+use serde::Serialize;
+
 /// `SortedMap` is a data structure with similar characteristics as BTreeMap but
 /// slightly different trade-offs: lookup is *O*(log(*n*)), insertion and removal
 /// are *O*(*n*) but elements can be iterated in order cheaply.
@@ -17,6 +19,7 @@ pub use index_map::SortedIndexMultiMap;
 /// ranges of elements as a slice, and slices of already sorted elements can be
 /// inserted efficiently.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Encodable_Generic, Decodable_Generic)]
+#[derive(Serialize)]
 pub struct SortedMap<K, V> {
     data: Vec<(K, V)>,
 }

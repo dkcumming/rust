@@ -117,6 +117,8 @@ pub use self::typeck_results::{
     TypeckResults, UserType, UserTypeAnnotationIndex,
 };
 
+use serde::Serialize;
+
 pub mod _match;
 pub mod abstract_const;
 pub mod adjustment;
@@ -493,6 +495,7 @@ pub struct CReaderCacheKey {
 
 /// Use this rather than `TyKind`, whenever possible.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable)]
+#[derive(Serialize)]
 #[rustc_diagnostic_item = "Ty"]
 #[rustc_pass_by_value]
 pub struct Ty<'tcx>(Interned<'tcx, WithCachedTypeInfo<TyKind<'tcx>>>);
@@ -538,6 +541,7 @@ pub struct CratePredicatesMap<'tcx> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize)]
 pub struct Term<'tcx> {
     ptr: NonNull<()>,
     marker: PhantomData<(Ty<'tcx>, Const<'tcx>)>,
@@ -909,6 +913,7 @@ impl<'tcx> OpaqueHiddenType<'tcx> {
 /// another.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[derive(HashStable, TyEncodable, TyDecodable)]
+#[derive(Serialize)]
 pub struct Placeholder<T> {
     pub universe: UniverseIndex,
     pub bound: T,

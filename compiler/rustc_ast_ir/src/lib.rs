@@ -5,9 +5,12 @@
 #[macro_use]
 extern crate rustc_macros;
 
+use serde::Serialize;
+
 /// The movability of a coroutine / closure literal:
 /// whether a coroutine contains self-references, causing it to be `!Unpin`.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Copy)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
 pub enum Movability {
     /// May contain self-references, `!Unpin`.
@@ -18,6 +21,7 @@ pub enum Movability {
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, Copy)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
+#[derive(Serialize)]
 pub enum Mutability {
     // N.B. Order is deliberate, so that Not < Mut
     Not,

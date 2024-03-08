@@ -9,6 +9,8 @@ use std::slice;
 
 use super::*;
 
+use serde::Serialize;
+
 impl SwitchTargets {
     /// Creates switch targets from an iterator of values and target blocks.
     ///
@@ -330,6 +332,7 @@ impl<O> AssertKind<O> {
 }
 
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct Terminator<'tcx> {
     pub source_info: SourceInfo,
     pub kind: TerminatorKind<'tcx>,

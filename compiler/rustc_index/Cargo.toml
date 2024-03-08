@@ -9,8 +9,9 @@ arrayvec = { version = "0.7", default-features = false }
 rustc_index_macros = { path = "../rustc_index_macros", default-features = false }
 rustc_macros = { path = "../rustc_macros", optional = true }
 rustc_serialize = { path = "../rustc_serialize", optional = true }
-smallvec = "1.8.1"
+smallvec = { version = "1.8.1", features = ["serde"] }
 # tidy-alphabetical-end
+serde = { version = "1.0.0", features = ["derive"] }
 
 [features]
 # tidy-alphabetical-start

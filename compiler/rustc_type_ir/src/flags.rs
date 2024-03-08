@@ -1,9 +1,12 @@
+use serde::Serialize;
+
 bitflags! {
     /// Flags that we track on types. These flags are propagated upwards
     /// through the type during type construction, so that we can quickly check
     /// whether the type has various kinds of types in it without recursing
     /// over the type itself.
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    #[derive(Serialize)]
     pub struct TypeFlags: u32 {
         // Does this have parameters? Used to determine whether instantiation is
         // required.

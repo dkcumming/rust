@@ -13,8 +13,11 @@ use self::TyKind::*;
 
 use rustc_ast_ir::Mutability;
 
+use serde::Serialize;
+
 /// Specifies how a trait object is represented.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
 pub enum DynKind {
     /// An unsized `dyn Trait` object
@@ -29,6 +32,7 @@ pub enum DynKind {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
 pub enum AliasKind {
     /// A projection `<Type as Trait>::AssocType`.
@@ -71,6 +75,7 @@ impl AliasKind {
     Ord = "feature_allow_slow_enum",
     Hash(bound = "")
 )]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(TyEncodable, TyDecodable, HashStable_NoContext))]
 pub enum TyKind<I: Interner> {
     /// The primitive boolean type. Written as `bool`.
@@ -432,6 +437,7 @@ impl<I: Interner> fmt::Debug for TyKind<I> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
 pub enum IntTy {
     Isize,
@@ -490,6 +496,7 @@ impl IntTy {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Copy)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
 pub enum UintTy {
     Usize,
@@ -548,6 +555,7 @@ impl UintTy {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
 pub enum FloatTy {
     F16,
@@ -591,6 +599,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[debug_format = "?{}t"]
     #[gate_rustc_only]
+    #[derive(Serialize)]
     pub struct TyVid {}
 }
 
@@ -600,6 +609,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[debug_format = "?{}i"]
     #[gate_rustc_only]
+    #[derive(Serialize)]
     pub struct IntVid {}
 }
 
@@ -609,6 +619,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[debug_format = "?{}f"]
     #[gate_rustc_only]
+    #[derive(Serialize)]
     pub struct FloatVid {}
 }
 
@@ -618,6 +629,7 @@ rustc_index::newtype_index! {
 /// type variable for the element type since we won't know until it's
 /// used what the element type is supposed to be.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable))]
 pub enum InferTy {
     /// A type variable.
@@ -809,6 +821,7 @@ impl<I: Interner> DebugWithInfcx<I> for InferTy {
     Hash(bound = ""),
     Debug(bound = "")
 )]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(TyEncodable, TyDecodable, HashStable_NoContext))]
 pub struct TypeAndMut<I: Interner> {
     pub ty: I::Ty,

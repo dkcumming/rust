@@ -25,6 +25,8 @@ use std::str;
 
 use super::{Destructor, FieldDef, GenericPredicates, Ty, TyCtxt, VariantDef, VariantDiscr};
 
+use serde::Serialize;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, HashStable, TyEncodable, TyDecodable)]
 pub struct AdtFlags(u16);
 bitflags! {
@@ -181,6 +183,7 @@ impl<'a> HashStable<StableHashingContext<'a>> for AdtDefData {
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, HashStable)]
+#[derive(Serialize)]
 #[rustc_pass_by_value]
 pub struct AdtDef<'tcx>(pub Interned<'tcx, AdtDefData>);
 

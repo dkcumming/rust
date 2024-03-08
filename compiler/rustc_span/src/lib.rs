@@ -89,6 +89,8 @@ use md5::Md5;
 use sha1::Sha1;
 use sha2::Sha256;
 
+use serde::Serialize;
+
 #[cfg(test)]
 mod tests;
 
@@ -2524,6 +2526,7 @@ where
 /// type cannot be constructed outside of this crate.
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[derive(HashStable_Generic)]
+#[derive(Serialize)]
 pub struct ErrorGuaranteed(());
 
 impl ErrorGuaranteed {

@@ -6,12 +6,15 @@ use crate::fold::{FallibleTypeFolder, TypeFoldable};
 use crate::visit::{TypeVisitable, TypeVisitor};
 use crate::{Interner, PlaceholderLike, UniverseIndex};
 
+use serde::Serialize;
+
 /// A "canonicalized" type `V` is one where all free inference
 /// variables have been rewritten to "canonical vars". These are
 /// numbered starting from 0 in order of first appearance.
 #[derive(derivative::Derivative)]
 #[derivative(Clone(bound = "V: Clone"), Hash(bound = "V: Hash"))]
 #[cfg_attr(feature = "nightly", derive(TyEncodable, TyDecodable, HashStable_NoContext))]
+#[derive(Serialize)]
 pub struct Canonical<I: Interner, V> {
     pub value: V,
     pub max_universe: UniverseIndex,
@@ -120,6 +123,7 @@ where
 /// with fresh inference variables replacing the canonical values.
 #[derive(derivative::Derivative)]
 #[derivative(Clone(bound = ""), Copy(bound = ""), Hash(bound = ""), Debug(bound = ""))]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(TyDecodable, TyEncodable, HashStable_NoContext))]
 pub struct CanonicalVarInfo<I: Interner> {
     pub kind: CanonicalVarKind<I>,
@@ -203,6 +207,7 @@ impl<I: Interner> CanonicalVarInfo<I> {
 /// that analyzes type-like values.
 #[derive(derivative::Derivative)]
 #[derivative(Clone(bound = ""), Copy(bound = ""), Hash(bound = ""), Debug(bound = ""))]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(TyDecodable, TyEncodable, HashStable_NoContext))]
 pub enum CanonicalVarKind<I: Interner> {
     /// Some kind of type inference variable.
@@ -342,6 +347,7 @@ impl<I: Interner> CanonicalVarKind<I> {
 /// usize or f32). In order to faithfully reproduce a type, we need to
 /// know what set of types a given type variable can be unified with.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(TyDecodable, TyEncodable, HashStable_NoContext))]
 pub enum CanonicalTyVarKind {
     /// General type variable `?T` that can be unified with arbitrary types.

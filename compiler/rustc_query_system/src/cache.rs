@@ -4,9 +4,31 @@ use crate::dep_graph::{DepContext, DepNodeIndex};
 
 use rustc_data_structures::fx::FxHashMap;
 use rustc_data_structures::sync::Lock;
+// use serde::ser::SerializeMap;
 
 use std::hash::Hash;
 
+use serde::Serialize;
+
+
+// // Needs remote derives https://serde.rs/remote-derive.html 
+// impl<K, V> Serialize for FxHashMap<K, V> 
+// where
+//     K: Serialize,
+//     V: Serialize,
+// {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: serde::Serializer {
+//        let mut map = serializer.serialize_map(Some(self.len()))?; 
+//        for (k, v) in self {
+//         map.serialize_entry(k, v)?;
+//        }
+//        map.end()
+//     }
+// }
+
+#[derive(Serialize)]
 pub struct Cache<Key, Value> {
     hashmap: Lock<FxHashMap<Key, WithDepNode<Value>>>,
 }
@@ -41,6 +63,7 @@ impl<Key: Eq + Hash, Value: Clone> Cache<Key, Value> {
 }
 
 #[derive(Clone, Eq, PartialEq)]
+#[derive(Serialize)]
 pub struct WithDepNode<T> {
     dep_node: DepNodeIndex,
     cached_value: T,

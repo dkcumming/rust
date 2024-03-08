@@ -4,11 +4,14 @@ use rustc_macros::HashStable_Generic;
 use rustc_span::symbol::sym;
 use rustc_span::{Span, Symbol};
 
+use serde::Serialize;
+
 #[cfg(test)]
 mod tests;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 #[derive(HashStable_Generic, Encodable, Decodable)]
+#[derive(Serialize)]
 pub enum Abi {
     // Some of the ABIs come first because every time we add a new ABI, we have to re-bless all the
     // hashing tests. These are used in many places, so giving them stable values reduces test

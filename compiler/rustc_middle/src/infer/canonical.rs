@@ -36,6 +36,8 @@ use crate::mir::ConstraintCategory;
 use crate::ty::GenericArg;
 use crate::ty::{self, BoundVar, List, Region, Ty, TyCtxt, TypeFlags, TypeVisitableExt};
 
+use serde::Serialize;
+
 pub type Canonical<'tcx, V> = IrCanonical<TyCtxt<'tcx>, V>;
 
 pub type CanonicalVarInfo<'tcx> = IrCanonicalVarInfo<TyCtxt<'tcx>>;
@@ -296,6 +298,7 @@ impl<'tcx> Index<BoundVar> for CanonicalVarValues<'tcx> {
 }
 
 #[derive(Default)]
+#[derive(Serialize)]
 pub struct CanonicalParamEnvCache<'tcx> {
     map: Lock<
         FxHashMap<

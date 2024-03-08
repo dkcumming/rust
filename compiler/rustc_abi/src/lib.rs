@@ -24,6 +24,8 @@ mod layout;
 
 pub use layout::LayoutCalculator;
 
+use serde::Serialize;
+
 /// Requirements for a `StableHashingContext` to be used in this crate.
 /// This is a hack to allow using the `HashStable_Generic` derive macro
 /// instead of implementing everything in `rustc_middle`.
@@ -163,6 +165,7 @@ impl ReprOptions {
 /// Parsed [Data layout](https://llvm.org/docs/LangRef.html#data-layout)
 /// for a target, which contains everything needed to compute layouts.
 #[derive(Debug, PartialEq, Eq)]
+#[derive(Serialize)]
 pub struct TargetDataLayout {
     pub endian: Endian,
     pub i1_align: AbiAndPrefAlign,
@@ -391,6 +394,7 @@ impl HasDataLayout for TargetDataLayout {
 
 /// Endianness of the target, which must match cfg(target-endian).
 #[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Serialize)]
 pub enum Endian {
     Little,
     Big,
@@ -425,6 +429,7 @@ impl FromStr for Endian {
 
 /// Size of a type in bytes.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable_Generic, Decodable_Generic, HashStable_Generic))]
 pub struct Size {
     raw: u64,
@@ -650,6 +655,7 @@ impl Step for Size {
 /// Alignment of a type in bytes (always a power of two).
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "nightly", derive(Encodable_Generic, Decodable_Generic, HashStable_Generic))]
+#[derive(Serialize)]
 pub struct Align {
     pow2: u8,
 }
@@ -765,6 +771,7 @@ impl Align {
 
 /// A pair of alignments, ABI-mandated and preferred.
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(HashStable_Generic))]
 pub struct AbiAndPrefAlign {
     pub abi: Align,
@@ -790,6 +797,7 @@ impl AbiAndPrefAlign {
 
 /// Integers, also used for enum discriminants.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable_Generic, Decodable_Generic, HashStable_Generic))]
 pub enum Integer {
     I8,
@@ -1249,6 +1257,7 @@ impl<FieldIdx: Idx> FieldsShape<FieldIdx> {
 /// should operate on. Special address spaces have an effect on code generation,
 /// depending on the target and the address spaces it implements.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(HashStable_Generic))]
 pub struct AddressSpace(pub u32);
 

@@ -22,6 +22,8 @@ use crate::dep_graph::edges::EdgesVec;
 use crate::ich::StableHashingContext;
 use crate::query::{QueryContext, QuerySideEffects};
 
+use serde::Serialize;
+
 #[cfg(debug_assertions)]
 use {super::debug::EdgeFilter, std::env};
 
@@ -37,6 +39,7 @@ pub struct DepGraph<D: Deps> {
 }
 
 rustc_index::newtype_index! {
+    #[derive(Serialize)]
     pub struct DepNodeIndex {}
 }
 

@@ -16,6 +16,8 @@ use crate::{Idx, IndexVec};
 
 use Chunk::*;
 
+use serde::Serialize;
+
 #[cfg(test)]
 mod tests;
 
@@ -1592,6 +1594,7 @@ impl<T: Idx> From<BitSet<T>> for GrowableBitSet<T> {
 /// index exceeds the relevant bound.
 #[cfg_attr(feature = "nightly", derive(Decodable_Generic, Encodable_Generic))]
 #[derive(Clone, Eq, PartialEq, Hash)]
+#[derive(Serialize)]
 pub struct BitMatrix<R: Idx, C: Idx> {
     num_rows: usize,
     num_columns: usize,

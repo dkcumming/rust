@@ -32,6 +32,7 @@ mod maybe_sync {
     use std::mem::ManuallyDrop;
     use std::ops::{Deref, DerefMut};
 
+
     /// A guard holding mutable access to a `Lock` which is in a locked state.
     #[must_use = "if unused the Lock will immediately unlock"]
     pub struct LockGuard<'a, T> {
@@ -78,6 +79,8 @@ mod maybe_sync {
         }
     }
 
+    // TODO: Daniel
+    // impl Serialize for ModeUnion
     union ModeUnion {
         /// Indicates if the cell is locked. Only used if `Lock.mode` is `NoSync`.
         no_sync: ManuallyDrop<Cell<bool>>,
@@ -191,6 +194,9 @@ mod no_sync {
 
     pub use std::cell::RefMut as LockGuard;
 
+    use serde::Serialize;
+
+    #[derive(Serialize)]
     pub struct Lock<T>(RefCell<T>);
 
     impl<T> Lock<T> {

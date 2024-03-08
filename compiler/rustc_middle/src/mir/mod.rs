@@ -56,6 +56,7 @@ pub mod interpret;
 pub mod mono;
 pub mod patch;
 pub mod pretty;
+pub mod json;
 mod query;
 mod statement;
 mod syntax;
@@ -71,11 +72,14 @@ pub use self::graphviz::write_mir_graphviz;
 pub use self::pretty::{
     create_dump_file, display_allocation, dump_enabled, dump_mir, write_mir_pretty, PassWhere,
 };
+pub use self::json::write_mir_json;
 pub use consts::*;
 use pretty::pretty_print_const_value;
 pub use statement::*;
 pub use syntax::*;
 pub use terminator::*;
+
+use serde::Serialize;
 
 /// Types for locals
 pub type LocalDecls<'tcx> = IndexSlice<Local, LocalDecl<'tcx>>;
@@ -228,6 +232,7 @@ impl RuntimePhase {
 /// Where a specific `mir::Body` comes from.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[derive(HashStable, TyEncodable, TyDecodable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct MirSource<'tcx> {
     pub instance: InstanceDef<'tcx>,
 
@@ -256,6 +261,7 @@ impl<'tcx> MirSource<'tcx> {
 /// taken out of the field after yields are turned into returns, and the `coroutine_drop`
 /// body is only populated after the state transform pass.
 #[derive(Clone, TyEncodable, TyDecodable, Debug, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct CoroutineInfo<'tcx> {
     /// The yield type of the function. This field is removed after the state transform pass.
     pub yield_ty: Option<Ty<'tcx>>,
@@ -314,6 +320,7 @@ impl<'tcx> CoroutineInfo<'tcx> {
 
 /// The lowered representation of a single function.
 #[derive(Clone, TyEncodable, TyDecodable, Debug, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct Body<'tcx> {
     /// A list of basic blocks. References to basic block use a newtyped index type [`BasicBlock`]
     /// that indexes into this vector.
@@ -705,6 +712,7 @@ impl<'tcx> IndexMut<BasicBlock> for Body<'tcx> {
 }
 
 #[derive(Copy, Clone, Debug, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub enum ClearCrossCrate<T> {
     Clear,
     Set(T),
@@ -778,6 +786,7 @@ impl<D: TyDecoder, T: Decodable<D>> Decodable<D> for ClearCrossCrate<T> {
 // The unofficial Cranelift backend, at least as of #65828, needs `SourceInfo` to implement `Eq` and
 // `Hash`. Please ping @bjorn3 if removing them.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TyEncodable, TyDecodable, Hash, HashStable)]
+#[derive(Serialize)]
 pub struct SourceInfo {
     /// The source span for the AST pertaining to this MIR entity.
     pub span: Span,
@@ -802,6 +811,7 @@ rustc_index::newtype_index! {
     #[encodable]
     #[orderable]
     #[debug_format = "_{}"]
+    #[derive(Serialize)]
     pub struct Local {
         const RETURN_PLACE = 0;
     }
@@ -902,6 +912,7 @@ pub struct BlockTailInfo {
 /// This can be a binding declared by the user, a temporary inserted by the compiler, a function
 /// argument, or the return place.
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct LocalDecl<'tcx> {
     /// Whether this is a mutable binding (i.e., `let x` or `let mut x`).
     ///
@@ -1239,6 +1250,7 @@ rustc_index::newtype_index! {
     #[encodable]
     #[orderable]
     #[debug_format = "bb{}"]
+    #[derive(Serialize)]
     pub struct BasicBlock {
         const START_BLOCK = 0;
     }
@@ -1257,6 +1269,7 @@ impl BasicBlock {
 ///
 /// See [`BasicBlock`] for documentation on what basic blocks are at a high level.
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct BasicBlockData<'tcx> {
     /// List of statements in this block.
     pub statements: Vec<Statement<'tcx>>,
@@ -1420,6 +1433,7 @@ impl SourceScope {
 }
 
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct SourceScopeData<'tcx> {
     pub span: Span,
     pub parent_scope: Option<SourceScope>,
@@ -1605,6 +1619,7 @@ rustc_index::newtype_index! {
     #[encodable]
     #[orderable]
     #[debug_format = "promoted[{}]"]
+    #[derive(Serialize)]
     pub struct Promoted {}
 }
 

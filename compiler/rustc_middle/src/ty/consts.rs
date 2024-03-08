@@ -22,8 +22,11 @@ pub use valtree::*;
 
 pub type ConstKind<'tcx> = IrConstKind<TyCtxt<'tcx>>;
 
+use serde::Serialize;
+
 /// Use this rather than `ConstData`, whenever possible.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable)]
+#[derive(Serialize)]
 #[rustc_pass_by_value]
 pub struct Const<'tcx>(pub(super) Interned<'tcx, WithCachedTypeInfo<ConstData<'tcx>>>);
 

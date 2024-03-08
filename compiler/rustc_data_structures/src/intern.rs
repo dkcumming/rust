@@ -5,8 +5,13 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::ptr;
 
+use serde::Serialize;
+
 mod private {
+    use serde::Serialize;
+    
     #[derive(Clone, Copy, Debug)]
+    #[derive(Serialize)]
     pub struct PrivateZst;
 }
 
@@ -21,6 +26,7 @@ mod private {
 /// The `PrivateZst` field means you can pattern match with `Interned(v, _)`
 /// but you can only construct a `Interned` with `new_unchecked`, and not
 /// directly.
+#[derive(Serialize)]
 #[rustc_pass_by_value]
 pub struct Interned<'a, T>(pub &'a T, pub private::PrivateZst);
 

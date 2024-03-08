@@ -237,7 +237,7 @@ pub fn write_mir_pretty<'tcx>(
     single: Option<DefId>,
     w: &mut dyn io::Write,
 ) -> io::Result<()> {
-    writeln!(w, "// WARNING: This output format is intended for human consumers only")?;
+    writeln!(w, "// WARNING: This output format is intended for human consumers only 2")?;
     writeln!(w, "// and is subject to change without notice. Knock yourself out.")?;
 
     let mut first = true;

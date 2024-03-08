@@ -14,6 +14,8 @@ use crate::ty::{
     GenericArgsRef, ImplPolarity, Term, Ty, TyCtxt, TypeFlags, WithCachedTypeInfo,
 };
 
+use serde::Serialize;
+
 pub type ClauseKind<'tcx> = IrClauseKind<TyCtxt<'tcx>>;
 pub type PredicateKind<'tcx> = IrPredicateKind<TyCtxt<'tcx>>;
 
@@ -194,6 +196,7 @@ impl<'tcx> Clause<'tcx> {
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Ord, Eq, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable, TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub enum ExistentialPredicate<'tcx> {
     /// E.g., `Iterator`.
     Trait(ExistentialTraitRef<'tcx>),
@@ -422,6 +425,7 @@ impl<'tcx> IntoDiagnosticArg for TraitRef<'tcx> {
 /// type and lifetime parameters (`[X, Y]` and `['a, 'b]` above).
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable, TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub struct ExistentialTraitRef<'tcx> {
     pub def_id: DefId,
     pub args: GenericArgsRef<'tcx>,
@@ -478,6 +482,7 @@ impl<'tcx> PolyExistentialTraitRef<'tcx> {
 /// A `ProjectionPredicate` for an `ExistentialTraitRef`.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, TyEncodable, TyDecodable)]
 #[derive(HashStable, TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub struct ExistentialProjection<'tcx> {
     pub def_id: DefId,
     pub args: GenericArgsRef<'tcx>,

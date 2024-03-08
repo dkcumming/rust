@@ -5,6 +5,8 @@ use rustc_target::abi::{HasDataLayout, Size};
 
 use std::{fmt, num::NonZero};
 
+use serde::Serialize;
+
 ////////////////////////////////////////////////////////////////////////////////
 // Pointer arithmetic
 ////////////////////////////////////////////////////////////////////////////////
@@ -129,6 +131,7 @@ pub trait Provenance: Copy + fmt::Debug + 'static {
 /// The type of provenance in the compile-time interpreter.
 /// This is a packed representation of an `AllocId` and an `immutable: bool`.
 #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Serialize)]
 pub struct CtfeProvenance(NonZero<u64>);
 
 impl From<AllocId> for CtfeProvenance {
@@ -233,6 +236,7 @@ impl Provenance for AllocId {
 /// Pointers are "tagged" with provenance information; typically the `AllocId` they belong to.
 #[derive(Copy, Clone, Eq, PartialEq, TyEncodable, TyDecodable, Hash)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub struct Pointer<Prov = CtfeProvenance> {
     pub(super) offset: Size, // kept private to avoid accidental misinterpretation (meaning depends on `Prov` type)
     pub provenance: Prov,

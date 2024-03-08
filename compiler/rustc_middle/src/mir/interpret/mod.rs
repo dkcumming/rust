@@ -159,6 +159,8 @@ pub use self::allocation::{
 
 pub use self::pointer::{CtfeProvenance, Pointer, PointerArithmetic, Provenance};
 
+use serde::Serialize;
+
 /// Uniquely identifies one of the following:
 /// - A constant
 /// - A static
@@ -206,6 +208,7 @@ pub enum LitToConstError {
 }
 
 #[derive(Copy, Clone, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Serialize)]
 pub struct AllocId(pub NonZero<u64>);
 
 // We want the `Debug` output to be readable as it is used by `derive(Debug)` for

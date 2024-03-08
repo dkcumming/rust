@@ -8,6 +8,8 @@ use std::num::NonZero;
 
 use crate::ty::TyCtxt;
 
+use serde::Serialize;
+
 #[derive(Copy, Clone)]
 /// A type for representing any integer. Only used for printing.
 pub struct ConstInt {
@@ -127,6 +129,7 @@ impl IntoDiagnosticArg for ConstInt {
 /// This is a packed struct in order to allow this type to be optimally embedded in enums
 /// (like Scalar).
 #[derive(Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(Serialize)]
 #[repr(packed)]
 pub struct ScalarInt {
     /// The first `size` bytes of `data` are the value.

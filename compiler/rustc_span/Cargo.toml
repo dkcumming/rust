@@ -18,3 +18,5 @@ sha2 = "0.10.1"
 tracing = "0.1"
 unicode-width = "0.1.4"
 # tidy-alphabetical-end
+
+serde = { version = "1.0.0", features = ["derive"] }

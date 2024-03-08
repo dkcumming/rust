@@ -5,6 +5,8 @@ use crate::{BytePos, SpanData};
 
 use rustc_data_structures::fx::FxIndexSet;
 
+use serde::Serialize;
+
 /// A compressed span.
 ///
 /// [`SpanData`] is 16 bytes, which is too big to stick everywhere. `Span` only
@@ -76,6 +78,7 @@ use rustc_data_structures::fx::FxIndexSet;
 /// using the callback `SPAN_TRACK` to access the query engine.
 ///
 #[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Serialize)]
 #[rustc_pass_by_value]
 pub struct Span {
     lo_or_index: u32,

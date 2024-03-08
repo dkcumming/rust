@@ -25,6 +25,8 @@ use rustc_target::spec::abi::Abi;
 use smallvec::SmallVec;
 use std::fmt;
 
+use serde::Serialize;
+
 #[derive(Debug, Copy, Clone, HashStable_Generic)]
 pub struct Lifetime {
     pub hir_id: HirId,
@@ -1331,6 +1333,7 @@ impl<'hir> Body<'hir> {
 
 /// The type of source expression that caused this coroutine to be created.
 #[derive(Clone, PartialEq, Eq, Debug, Copy, Hash, HashStable_Generic, Encodable, Decodable)]
+#[derive(Serialize)]
 pub enum CoroutineKind {
     /// A coroutine that comes from a desugaring.
     Desugared(CoroutineDesugaring, CoroutineSource),
@@ -1374,6 +1377,7 @@ impl fmt::Display for CoroutineKind {
 /// This helps error messages but is also used to drive coercions in
 /// type-checking (see #60424).
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Copy, HashStable_Generic, Encodable, Decodable)]
+#[derive(Serialize)]
 pub enum CoroutineSource {
     /// An explicit `async`/`gen` block written by the user.
     Block,
@@ -1397,6 +1401,7 @@ impl fmt::Display for CoroutineSource {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Copy, Hash, HashStable_Generic, Encodable, Decodable)]
+#[derive(Serialize)]
 pub enum CoroutineDesugaring {
     /// An explicit `async` block or the body of an `async` function.
     Async,
@@ -3064,6 +3069,7 @@ impl<'hir> Item<'hir> {
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 #[derive(Encodable, Decodable, HashStable_Generic)]
+#[derive(Serialize)]
 pub enum Unsafety {
     Unsafe,
     Normal,

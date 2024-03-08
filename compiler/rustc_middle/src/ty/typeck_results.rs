@@ -29,6 +29,8 @@ use std::{collections::hash_map::Entry, hash::Hash, iter};
 
 use super::RvalueScopes;
 
+use serde::Serialize;
+
 #[derive(TyEncodable, TyDecodable, Debug, HashStable)]
 pub struct TypeckResults<'tcx> {
     /// The `HirId::owner` all `ItemLocalId`s in this table are relative to.
@@ -598,6 +600,7 @@ rustc_index::newtype_index! {
     #[derive(HashStable)]
     #[encodable]
     #[debug_format = "UserType({})"]
+    #[derive(Serialize)]
     pub struct UserTypeAnnotationIndex {
         const START_INDEX = 0;
     }
@@ -608,6 +611,7 @@ pub type CanonicalUserTypeAnnotations<'tcx> =
     IndexVec<UserTypeAnnotationIndex, CanonicalUserTypeAnnotation<'tcx>>;
 
 #[derive(Clone, Debug, TyEncodable, TyDecodable, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct CanonicalUserTypeAnnotation<'tcx> {
     pub user_ty: Box<CanonicalUserType<'tcx>>,
     pub span: Span,
@@ -622,6 +626,7 @@ pub type CanonicalUserType<'tcx> = Canonical<'tcx, UserType<'tcx>>;
 /// so forth.
 #[derive(Copy, Clone, Debug, PartialEq, TyEncodable, TyDecodable)]
 #[derive(Eq, Hash, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub enum UserType<'tcx> {
     Ty(Ty<'tcx>),
 

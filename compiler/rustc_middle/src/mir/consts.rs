@@ -11,6 +11,8 @@ use crate::ty::GenericArgsRef;
 use crate::ty::ScalarInt;
 use crate::ty::{self, print::pretty_print_const, Ty, TyCtxt};
 
+use serde::Serialize;
+
 ///////////////////////////////////////////////////////////////////////////
 /// Evaluated Constants
 
@@ -29,6 +31,7 @@ pub struct ConstAlloc<'tcx> {
 /// array length computations, enum discriminants and the pattern matching logic.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, TyEncodable, TyDecodable, Hash)]
 #[derive(HashStable, Lift)]
+#[derive(Serialize)]
 pub enum ConstValue<'tcx> {
     /// Used for types with `layout::abi::Scalar` ABI.
     ///
@@ -196,6 +199,7 @@ impl<'tcx> ConstValue<'tcx> {
 
 #[derive(Clone, Copy, PartialEq, Eq, TyEncodable, TyDecodable, Hash, HashStable, Debug)]
 #[derive(TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub enum Const<'tcx> {
     /// This constant came from the type system.
     ///
@@ -457,6 +461,7 @@ impl<'tcx> Const<'tcx> {
 /// An unevaluated (potentially generic) constant used in MIR.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord, TyEncodable, TyDecodable)]
 #[derive(Hash, HashStable, TypeFoldable, TypeVisitable, Lift)]
+#[derive(Serialize)]
 pub struct UnevaluatedConst<'tcx> {
     pub def: DefId,
     pub args: GenericArgsRef<'tcx>,

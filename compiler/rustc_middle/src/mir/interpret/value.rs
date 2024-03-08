@@ -16,6 +16,8 @@ use super::{
     ScalarSizeMismatch,
 };
 
+use serde::Serialize;
+
 /// A `Scalar` represents an immediate, primitive value existing outside of a
 /// `memory::Allocation`. It is in many ways like a small chunk of an `Allocation`, up to 16 bytes in
 /// size. Like a range of bytes in an `Allocation`, a `Scalar` can either represent the raw bytes
@@ -25,6 +27,7 @@ use super::{
 /// Do *not* match on a `Scalar`! Use the various `to_*` methods instead.
 #[derive(Clone, Copy, Eq, PartialEq, TyEncodable, TyDecodable, Hash)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub enum Scalar<Prov = CtfeProvenance> {
     /// The raw bytes of a simple value.
     Int(ScalarInt),

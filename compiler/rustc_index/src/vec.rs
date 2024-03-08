@@ -11,6 +11,8 @@ use std::vec;
 
 use crate::{Idx, IndexSlice};
 
+use serde::Serialize;
+
 /// An owned contiguous collection of `T`s, indexed by `I` rather than by `usize`.
 /// Its purpose is to avoid mixing indexes.
 ///
@@ -21,6 +23,7 @@ use crate::{Idx, IndexSlice};
 ///
 /// [`newtype_index!`]: ../macro.newtype_index.html
 #[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize)]
 #[repr(transparent)]
 pub struct IndexVec<I: Idx, T> {
     pub raw: Vec<T>,

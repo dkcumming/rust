@@ -6,6 +6,8 @@ use rustc_span::Symbol;
 
 use std::fmt::{self, Debug, Formatter};
 
+use serde::Serialize;
+
 rustc_index::newtype_index! {
     /// ID of a coverage counter. Values ascend from 0.
     ///
@@ -21,6 +23,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[max = 0xFFFF_FFFF]
     #[debug_format = "CounterId({})"]
+    #[derive(Serialize)]
     pub struct CounterId {}
 }
 
@@ -43,6 +46,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[max = 0xFFFF_FFFF]
     #[debug_format = "ExpressionId({})"]
+    #[derive(Serialize)]
     pub struct ExpressionId {}
 }
 
@@ -58,6 +62,7 @@ impl ExpressionId {
 /// the value of code/gap mappings, and the true/false arms of branch mappings.
 #[derive(Copy, Clone, PartialEq, Eq)]
 #[derive(TyEncodable, TyDecodable, Hash, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub enum CovTerm {
     Zero,
     Counter(CounterId),
@@ -115,6 +120,7 @@ impl Debug for CoverageKind {
 
 #[derive(Clone, TyEncodable, TyDecodable, Hash, HashStable, PartialEq, Eq, PartialOrd, Ord)]
 #[derive(TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct CodeRegion {
     pub file_name: Symbol,
     pub start_line: u32,
@@ -135,6 +141,7 @@ impl Debug for CodeRegion {
 
 #[derive(Copy, Clone, Debug, PartialEq, TyEncodable, TyDecodable, Hash, HashStable)]
 #[derive(TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub enum Op {
     Subtract,
     Add,
@@ -152,6 +159,7 @@ impl Op {
 
 #[derive(Clone, Debug)]
 #[derive(TyEncodable, TyDecodable, Hash, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct Expression {
     pub lhs: CovTerm,
     pub op: Op,
@@ -160,6 +168,7 @@ pub struct Expression {
 
 #[derive(Clone, Debug)]
 #[derive(TyEncodable, TyDecodable, Hash, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub enum MappingKind {
     /// Associates a normal region of code with a counter/expression/zero.
     Code(CovTerm),
@@ -185,6 +194,7 @@ impl MappingKind {
 
 #[derive(Clone, Debug)]
 #[derive(TyEncodable, TyDecodable, Hash, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct Mapping {
     pub kind: MappingKind,
     pub code_region: CodeRegion,
@@ -195,6 +205,7 @@ pub struct Mapping {
 /// into the function's basic blocks.
 #[derive(Clone, Debug)]
 #[derive(TyEncodable, TyDecodable, Hash, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct FunctionCoverageInfo {
     pub function_source_hash: u64,
     pub num_counters: usize,

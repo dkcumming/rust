@@ -8,6 +8,8 @@ use crate::{
     TyKind, UniverseIndex,
 };
 
+use serde::Serialize;
+
 pub trait Interner: Sized {
     type DefId: Copy + Debug + Hash + Ord;
     type AdtDef: Copy + Debug + Hash + Ord;
@@ -34,12 +36,13 @@ pub trait Interner: Sized {
         + Into<Self::GenericArg>
         + IntoKind<Kind = TyKind<Self>>
         + TypeSuperVisitable<Self>
-        + Flags;
+        + Flags
+        + Serialize;
     type Tys: Copy + Debug + Hash + Ord + IntoIterator<Item = Self::Ty>;
     type AliasTy: Copy + DebugWithInfcx<Self> + Hash + Ord;
     type ParamTy: Copy + Debug + Hash + Ord;
     type BoundTy: Copy + Debug + Hash + Ord;
-    type PlaceholderTy: Copy + Debug + Hash + Ord + PlaceholderLike;
+    type PlaceholderTy: Copy + Debug + Hash + Ord + PlaceholderLike + Serialize;
 
     // Things stored inside of tys
     type ErrorGuaranteed: Copy + Debug + Hash + Ord;
@@ -58,7 +61,7 @@ pub trait Interner: Sized {
         + TypeSuperVisitable<Self>
         + Flags;
     type AliasConst: Copy + DebugWithInfcx<Self> + Hash + Ord;
-    type PlaceholderConst: Copy + Debug + Hash + Ord + PlaceholderLike;
+    type PlaceholderConst: Copy + Debug + Hash + Ord + PlaceholderLike + Serialize;
     type ParamConst: Copy + Debug + Hash + Ord;
     type BoundConst: Copy + Debug + Hash + Ord;
     type ValueConst: Copy + Debug + Hash + Ord;
@@ -76,7 +79,7 @@ pub trait Interner: Sized {
     type LateParamRegion: Copy + Debug + Hash + Ord;
     type BoundRegion: Copy + Debug + Hash + Ord;
     type InferRegion: Copy + DebugWithInfcx<Self> + Hash + Ord;
-    type PlaceholderRegion: Copy + Debug + Hash + Ord + PlaceholderLike;
+    type PlaceholderRegion: Copy + Debug + Hash + Ord + PlaceholderLike + Serialize;
 
     // Predicates
     type Predicate: Copy + Debug + Hash + Eq + TypeSuperVisitable<Self> + Flags;

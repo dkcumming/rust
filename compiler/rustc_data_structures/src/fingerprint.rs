@@ -2,10 +2,13 @@ use crate::stable_hasher::{Hash64, StableHasher, StableHasherResult};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use std::hash::{Hash, Hasher};
 
+use serde::Serialize;
+
 #[cfg(test)]
 mod tests;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Debug, Clone, Copy)]
+#[derive(Serialize)]
 #[repr(C)]
 pub struct Fingerprint(u64, u64);
 

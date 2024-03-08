@@ -11,12 +11,15 @@ use rustc_serialize::{Decodable, Encodable};
 use std::fmt;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 
+use serde::Serialize;
+
 pub type StableCrateIdMap =
     indexmap::IndexMap<StableCrateId, CrateNum, BuildHasherDefault<Unhasher>>;
 
 rustc_index::newtype_index! {
     #[orderable]
     #[debug_format = "crate{}"]
+    #[derive(Serialize)]
     pub struct CrateNum {}
 }
 
@@ -206,6 +209,7 @@ rustc_index::newtype_index! {
     /// shorthand for a particular DefPath.
     #[orderable]
     #[debug_format = "DefIndex({})"]
+    #[derive(Serialize)]
     pub struct DefIndex {
         /// The crate root is always assigned index 0 by the AST Map code,
         /// thanks to `NodeCollector::new`.
@@ -224,6 +228,7 @@ rustc_index::newtype_index! {
 #[cfg_attr(not(target_pointer_width = "64"), derive(Hash))]
 #[repr(C)]
 #[rustc_pass_by_value]
+#[derive(Serialize)]
 // We guarantee field order. Note that the order is essential here, see below why.
 pub struct DefId {
     // cfg-ing the order of fields so that the `DefIndex` which is high entropy always ends up in

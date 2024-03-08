@@ -77,6 +77,8 @@ use std::iter;
 use std::mem;
 use std::ops::{Bound, Deref};
 
+use serde::Serialize;
+
 #[allow(rustc::usage_of_ty_tykind)]
 impl<'tcx> Interner for TyCtxt<'tcx> {
     type DefId = DefId;
@@ -571,6 +573,7 @@ impl<'tcx> TyCtxtFeed<'tcx, LocalDefId> {
 ///   implicitly within the `ImplicitCtxt`. Explicit access is preferred when
 ///   possible.
 #[derive(Copy, Clone)]
+#[derive(Serialize)]
 #[rustc_diagnostic_item = "TyCtxt"]
 #[rustc_pass_by_value]
 pub struct TyCtxt<'tcx> {
@@ -596,6 +599,7 @@ impl<'tcx> Deref for TyCtxt<'tcx> {
 }
 
 /// See [TyCtxt] for details about this type.
+#[derive(Serialize)]
 pub struct GlobalCtxt<'tcx> {
     pub arena: &'tcx WorkerLocal<Arena<'tcx>>,
     pub hir_arena: &'tcx WorkerLocal<hir::Arena<'tcx>>,

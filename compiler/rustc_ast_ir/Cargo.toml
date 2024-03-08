@@ -12,6 +12,8 @@ rustc_span = { path = "../rustc_span", optional = true }
 smallvec = { version = "1.8.1" }
 # tidy-alphabetical-end
 
+serde = { version = "1.0.0", features = ["derive"] }
+
 [features]
 default = ["nightly"]
 nightly = [

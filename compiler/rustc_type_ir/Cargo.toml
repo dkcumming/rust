@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # tidy-alphabetical-start
-bitflags = "2.4.1"
+bitflags = { version = "2.4.1", features = ["serde"] }
 derivative = "2.2.0"
 rustc_ast_ir = { path = "../rustc_ast_ir" }
 rustc_data_structures = { path = "../rustc_data_structures", optional = true }
@@ -15,6 +15,8 @@ rustc_serialize = { path = "../rustc_serialize", optional = true }
 rustc_span = { path = "../rustc_span", optional = true }
 smallvec = { version = "1.8.1" }
 # tidy-alphabetical-end
+
+serde = { version = "1.0.0", features = ["derive"] }
 
 [features]
 default = ["nightly"]

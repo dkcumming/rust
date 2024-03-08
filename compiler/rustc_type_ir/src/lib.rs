@@ -59,6 +59,8 @@ pub use InferTy::*;
 pub use RegionKind::*;
 pub use TyKind::*;
 
+use serde::Serialize;
+
 rustc_index::newtype_index! {
     /// A [De Bruijn index][dbi] is a standard means of representing
     /// regions (and perhaps later types) in a higher-ranked setting. In
@@ -104,6 +106,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[debug_format = "DebruijnIndex({})"]
     #[gate_rustc_only]
+    #[derive(Serialize)]
     pub struct DebruijnIndex {
         const INNERMOST = 0;
     }
@@ -307,6 +310,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[debug_format = "U{}"]
     #[gate_rustc_only]
+    #[derive(Serialize)]
     pub struct UniverseIndex {}
 }
 
@@ -357,6 +361,7 @@ rustc_index::newtype_index! {
     #[orderable]
     #[debug_format = "{}"]
     #[gate_rustc_only]
+    #[derive(Serialize)]
     pub struct BoundVar {}
 }
 
@@ -367,6 +372,7 @@ rustc_index::newtype_index! {
 /// You can get the environment type of a closure using
 /// `tcx.closure_env_ty()`.
 #[derive(Clone, Copy, PartialOrd, Ord, PartialEq, Eq, Hash, Debug)]
+#[derive(Serialize)]
 #[cfg_attr(feature = "nightly", derive(Encodable, Decodable, HashStable_NoContext))]
 pub enum ClosureKind {
     // Warning: Ordering is significant here! The ordering is chosen

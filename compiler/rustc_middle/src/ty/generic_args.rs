@@ -22,6 +22,8 @@ use std::num::NonZero;
 use std::ops::{ControlFlow, Deref};
 use std::ptr::NonNull;
 
+use serde::Serialize;
+
 /// An entity in the Rust type system, which can be one of
 /// several kinds (types, lifetimes, and consts).
 /// To reduce memory usage, a `GenericArg` is an interned pointer,
@@ -31,6 +33,7 @@ use std::ptr::NonNull;
 /// Note: the `PartialEq`, `Eq` and `Hash` derives are only valid because `Ty`,
 /// `Region` and `Const` are all interned.
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Serialize)]
 pub struct GenericArg<'tcx> {
     ptr: NonNull<()>,
     marker: PhantomData<(Ty<'tcx>, ty::Region<'tcx>, ty::Const<'tcx>)>,
@@ -1047,6 +1050,7 @@ impl<'a, 'tcx> ArgFolder<'a, 'tcx> {
 /// (e.g., `<T>::Item` or `<T as Trait>::Item`).
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct UserArgs<'tcx> {
     /// The args for the item as given by the user.
     pub args: GenericArgsRef<'tcx>,
@@ -1074,6 +1078,7 @@ pub struct UserArgs<'tcx> {
 /// the self type here, which contains `?A` to be `&'static u32`
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, TyEncodable, TyDecodable)]
 #[derive(HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct UserSelfTy<'tcx> {
     pub impl_def_id: DefId,
     pub self_ty: Ty<'tcx>,

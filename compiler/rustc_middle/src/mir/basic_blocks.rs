@@ -10,7 +10,10 @@ use rustc_index::{IndexSlice, IndexVec};
 use rustc_serialize::{Decodable, Decoder, Encodable, Encoder};
 use smallvec::SmallVec;
 
+use serde::Serialize;
+
 #[derive(Clone, TyEncodable, TyDecodable, Debug, HashStable, TypeFoldable, TypeVisitable)]
+#[derive(Serialize)]
 pub struct BasicBlocks<'tcx> {
     basic_blocks: IndexVec<BasicBlock, BasicBlockData<'tcx>>,
     cache: Cache,
@@ -22,6 +25,7 @@ pub type Predecessors = IndexVec<BasicBlock, SmallVec<[BasicBlock; 4]>>;
 pub type SwitchSources = FxHashMap<(BasicBlock, BasicBlock), SmallVec<[Option<u128>; 1]>>;
 
 #[derive(Clone, Default, Debug)]
+#[derive(Serialize)]
 struct Cache {
     predecessors: OnceLock<Predecessors>,
     switch_sources: OnceLock<SwitchSources>,

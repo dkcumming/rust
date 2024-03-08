@@ -11,10 +11,13 @@ use std::ops::Deref;
 
 use crate::ty::{self, BoundVar, TyCtxt, TypeFlags};
 
+use serde::Serialize;
+
 pub type RegionKind<'tcx> = IrRegionKind<TyCtxt<'tcx>>;
 
 /// Use this rather than `RegionKind`, whenever possible.
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, HashStable)]
+#[derive(Serialize)]
 #[rustc_pass_by_value]
 pub struct Region<'tcx>(pub Interned<'tcx, RegionKind<'tcx>>);
 
@@ -322,6 +325,7 @@ impl<'tcx> Deref for Region<'tcx> {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, TyEncodable, TyDecodable, PartialOrd, Ord)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub struct EarlyParamRegion {
     pub def_id: DefId,
     pub index: u32,
@@ -340,6 +344,7 @@ rustc_index::newtype_index! {
     #[encodable]
     #[orderable]
     #[debug_format = "'?{}"]
+    #[derive(Serialize)]
     pub struct RegionVid {}
 }
 
@@ -351,6 +356,7 @@ impl Atom for RegionVid {
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, TyEncodable, TyDecodable, Copy)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 /// The parameter representation of late-bound function parameters, "some region
 /// at least as big as the scope `fr.scope`".
 pub struct LateParamRegion {
@@ -360,6 +366,7 @@ pub struct LateParamRegion {
 
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Hash, TyEncodable, TyDecodable, Copy)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub enum BoundRegionKind {
     /// An anonymous region parameter for a given fn (&T)
     BrAnon,
@@ -377,6 +384,7 @@ pub enum BoundRegionKind {
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, TyEncodable, TyDecodable, Debug, PartialOrd, Ord)]
 #[derive(HashStable)]
+#[derive(Serialize)]
 pub struct BoundRegion {
     pub var: BoundVar,
     pub kind: BoundRegionKind,
