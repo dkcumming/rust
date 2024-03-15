@@ -67,6 +67,29 @@ impl<'tcx> Context for TablesWrapper<'tcx> {
         tables.tcx.is_mir_available(def_id)
     }
 
+    fn has_promoted(&self, def: DefId) -> bool {
+        let tables = self.0.borrow();
+        let def_id = tables[def];
+        tables.has_promoted(def_id)
+    }
+
+    // // Pseudo
+    // fn get_all_promoted(&self) -> Map<DefId, <Body>> {
+    //     let local_items = get_all_locals();
+    //     let tables = self.0.borrow();
+    //     let map:Map<DefId, Vec<Body>> = Map::new();
+
+    //     for item in local_items {
+    //         let def_id = tables[item];
+    //         let idx_vec = tables.tcx.promoted_mir(def_id);
+
+    //         let stable_vec = Vec<Body>;
+    //         idx_vec.for_each(|body| stable_vec.push(body.stable()));
+            
+    //         map.insert(def_id, body);
+    //     }
+    // }
+
     fn foreign_modules(&self, crate_num: CrateNum) -> Vec<stable_mir::ty::ForeignModuleDef> {
         let mut tables = self.0.borrow_mut();
         let tcx = tables.tcx;

@@ -181,6 +181,10 @@ pub fn all_local_items() -> CrateItems {
     with(|cx| cx.all_local_items())
 }
 
+pub fn has_promoted(crate_item: CrateItem) -> bool {
+    with(|cx| cx.has_promoted(crate_item.0))
+}
+
 pub fn all_trait_decls() -> TraitDecls {
     with(|cx| cx.all_trait_decls())
 }

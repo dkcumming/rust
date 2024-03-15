@@ -56,6 +56,10 @@ impl<'tcx> Tables<'tcx> {
                     | ty::InstanceDef::Item(..)
             )
     }
+
+    pub(crate) fn has_promoted(&self, def_id: DefId) -> bool {
+        self.tcx.promoted_mir(def_id).len() != 0
+    }
 }
 
 /// Build a stable mir crate from a given crate number.
