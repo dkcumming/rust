@@ -4,6 +4,7 @@
 //! These APIs have no stability guarantee.
 
 use std::cell::Cell;
+use rustc_data_structures::fx::FxHashMap;
 
 use crate::abi::{FnAbi, Layout, LayoutShape};
 use crate::mir::alloc::{AllocId, GlobalAlloc};
@@ -34,6 +35,7 @@ pub trait Context {
     fn has_body(&self, item: DefId) -> bool;
     // fn promoted(&self, item: DefId);
     fn has_promoted(&self, def: DefId) -> bool;
+    fn get_all_promoted(&self) -> FxHashMap<DefId, Vec<Body>>;
     fn foreign_modules(&self, crate_num: CrateNum) -> Vec<ForeignModuleDef>;
     fn foreign_module(&self, mod_def: ForeignModuleDef) -> ForeignModule;
     fn foreign_items(&self, mod_def: ForeignModuleDef) -> Vec<ForeignDef>;
