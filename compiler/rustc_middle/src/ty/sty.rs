@@ -13,7 +13,7 @@ use crate::ty::{GenericArg, GenericArgs, GenericArgsRef};
 use crate::ty::{List, ParamEnv};
 use hir::def::DefKind;
 use rustc_data_structures::captures::Captures;
-use rustc_errors::{DiagArgValue, DiagMessage, ErrorGuaranteed, IntoDiagnosticArg, MultiSpan};
+use rustc_errors::{DiagArgValue, ErrorGuaranteed, IntoDiagArg, MultiSpan};
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
 use rustc_hir::LangItem;
@@ -1094,12 +1094,12 @@ impl<'tcx, T: IntoIterator> Binder<'tcx, T> {
     }
 }
 
-impl<'tcx, T> IntoDiagnosticArg for Binder<'tcx, T>
+impl<'tcx, T> IntoDiagArg for Binder<'tcx, T>
 where
-    T: IntoDiagnosticArg,
+    T: IntoDiagArg,
 {
-    fn into_diagnostic_arg(self) -> DiagArgValue {
-        self.value.into_diagnostic_arg()
+    fn into_diag_arg(self) -> DiagArgValue {
+        self.value.into_diag_arg()
     }
 }
 
@@ -1307,9 +1307,9 @@ impl<'tcx> FnSig<'tcx> {
     }
 }
 
-impl<'tcx> IntoDiagnosticArg for FnSig<'tcx> {
-    fn into_diagnostic_arg(self) -> DiagArgValue {
-        self.to_string().into_diagnostic_arg()
+impl<'tcx> IntoDiagArg for FnSig<'tcx> {
+    fn into_diag_arg(self) -> DiagArgValue {
+        self.to_string().into_diag_arg()
     }
 }
 
@@ -1543,7 +1543,7 @@ impl<'tcx> Ty<'tcx> {
     pub fn new_error_with_message<S: Into<MultiSpan>>(
         tcx: TyCtxt<'tcx>,
         span: S,
-        msg: impl Into<DiagMessage>,
+        msg: impl Into<Cow<'static, str>>,
     ) -> Ty<'tcx> {
         let reported = tcx.dcx().span_delayed_bug(span, msg);
         Ty::new(tcx, Error(reported))
@@ -1999,6 +1999,24 @@ impl<'tcx> Ty<'tcx> {
         }
     }
 
+    /// Tests whether this is a Box using the global allocator.
+    #[inline]
+    pub fn is_box_global(self, tcx: TyCtxt<'tcx>) -> bool {
+        match self.kind() {
+            Adt(def, args) if def.is_box() => {
+                let Some(alloc) = args.get(1) else {
+                    // Single-argument Box is always global. (for "minicore" tests)
+                    return true;
+                };
+                alloc.expect_ty().ty_adt_def().is_some_and(|alloc_adt| {
+                    let global_alloc = tcx.require_lang_item(LangItem::GlobalAlloc, None);
+                    alloc_adt.did() == global_alloc
+                })
+            }
+            _ => false,
+        }
+    }
+
     /// Panics if called on any type other than `Box<T>`.
     pub fn boxed_ty(self) -> Ty<'tcx> {
         match self.kind() {
@@ -2418,8 +2436,9 @@ impl<'tcx> Ty<'tcx> {
             },
 
             // "Bound" types appear in canonical queries when the
-            // closure type is not yet known
-            Bound(..) | Param(_) | Infer(_) => None,
+            // closure type is not yet known, and `Placeholder` and `Param`
+            // may be encountered in generic `AsyncFnKindHelper` goals.
+            Bound(..) | Placeholder(_) | Param(_) | Infer(_) => None,
 
             Error(_) => Some(ty::ClosureKind::Fn),
 

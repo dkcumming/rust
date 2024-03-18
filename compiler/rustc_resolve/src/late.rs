@@ -17,7 +17,7 @@ use rustc_ast::visit::{walk_list, AssocCtxt, BoundKind, FnCtxt, FnKind, Visitor}
 use rustc_ast::*;
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap};
 use rustc_errors::{
-    codes::*, struct_span_code_err, Applicability, DiagArgValue, IntoDiagnosticArg, StashKey,
+    codes::*, struct_span_code_err, Applicability, DiagArgValue, IntoDiagArg, StashKey,
 };
 use rustc_hir::def::Namespace::{self, *};
 use rustc_hir::def::{self, CtorKind, DefKind, LifetimeRes, NonMacroAttrKind, PartialRes, PerNS};
@@ -27,6 +27,7 @@ use rustc_middle::middle::resolve_bound_vars::Set1;
 use rustc_middle::{bug, span_bug};
 use rustc_session::config::{CrateType, ResolveDocLinks};
 use rustc_session::lint;
+use rustc_session::parse::feature_err;
 use rustc_span::source_map::{respan, Spanned};
 use rustc_span::symbol::{kw, sym, Ident, Symbol};
 use rustc_span::{BytePos, Span, SyntaxContext};
@@ -89,8 +90,8 @@ impl PatternSource {
     }
 }
 
-impl IntoDiagnosticArg for PatternSource {
-    fn into_diagnostic_arg(self) -> DiagArgValue {
+impl IntoDiagArg for PatternSource {
+    fn into_diag_arg(self) -> DiagArgValue {
         DiagArgValue::Str(Cow::Borrowed(self.descr()))
     }
 }
@@ -500,7 +501,7 @@ impl<'a> PathSource<'a> {
                 Res::Def(
                     DefKind::Ctor(_, CtorKind::Const | CtorKind::Fn)
                         | DefKind::Const
-                        | DefKind::Static(_)
+                        | DefKind::Static { .. }
                         | DefKind::Fn
                         | DefKind::AssocFn
                         | DefKind::AssocConst
@@ -578,6 +579,15 @@ impl MaybeExported<'_> {
         };
         def_id.map_or(true, |def_id| r.effective_visibilities.is_exported(def_id))
     }
+}
+
+/// Used for recording UnnecessaryQualification.
+#[derive(Debug)]
+pub(crate) struct UnnecessaryQualification<'a> {
+    pub binding: LexicalScopeBinding<'a>,
+    pub node_id: NodeId,
+    pub path_span: Span,
+    pub removal_span: Span,
 }
 
 #[derive(Default)]
@@ -1242,6 +1252,7 @@ impl<'a: 'ast, 'ast, 'tcx> Visitor<'ast> for LateResolutionVisitor<'a, '_, 'ast,
                     self.resolve_anon_const(anon_const, AnonConstKind::InlineConst);
                 }
                 InlineAsmOperand::Sym { sym } => self.visit_inline_asm_sym(sym),
+                InlineAsmOperand::Label { block } => self.visit_block(block),
             }
         }
     }
@@ -2593,10 +2604,19 @@ impl<'a: 'ast, 'b, 'ast, 'tcx> LateResolutionVisitor<'a, 'b, 'ast, 'tcx> {
                     let span = *entry.get();
                     let err = ResolutionError::NameAlreadyUsedInParameterList(ident.name, span);
                     self.report_error(param.ident.span, err);
-                    if let GenericParamKind::Lifetime = param.kind {
-                        // Record lifetime res, so lowering knows there is something fishy.
-                        self.record_lifetime_param(param.id, LifetimeRes::Error);
-                    }
+                    let rib = match param.kind {
+                        GenericParamKind::Lifetime => {
+                            // Record lifetime res, so lowering knows there is something fishy.
+                            self.record_lifetime_param(param.id, LifetimeRes::Error);
+                            continue;
+                        }
+                        GenericParamKind::Type { .. } => &mut function_type_rib,
+                        GenericParamKind::Const { .. } => &mut function_value_rib,
+                    };
+
+                    // Taint the resolution in case of errors to prevent follow up errors in typeck
+                    self.r.record_partial_res(param.id, PartialRes::new(Res::Err));
+                    rib.bindings.insert(ident, Res::Err);
                     continue;
                 }
                 Entry::Vacant(entry) => {
@@ -3112,7 +3132,7 @@ impl<'a: 'ast, 'b, 'ast, 'tcx> LateResolutionVisitor<'a, 'b, 'ast, 'tcx> {
                 );
                 rustc_middle::ty::Visibility::Public
             };
-            this.r.feed_visibility(this.r.local_def_id(id), vis);
+            this.r.feed_visibility(this.r.feed(id), vis);
         };
 
         let Some(binding) = binding else {
@@ -3635,7 +3655,7 @@ impl<'a: 'ast, 'b, 'ast, 'tcx> LateResolutionVisitor<'a, 'b, 'ast, 'tcx> {
                 }
                 Some(res)
             }
-            Res::Def(DefKind::Ctor(..) | DefKind::Const | DefKind::Static(_), _) => {
+            Res::Def(DefKind::Ctor(..) | DefKind::Const | DefKind::Static { .. }, _) => {
                 // This is unambiguously a fresh binding, either syntactically
                 // (e.g., `IDENT @ PAT` or `ref IDENT`) or because `IDENT` resolves
                 // to something unusable as a pattern (e.g., constructor function),
@@ -3953,6 +3973,7 @@ impl<'a: 'ast, 'b, 'ast, 'tcx> LateResolutionVisitor<'a, 'b, 'ast, 'tcx> {
             // Avoid recording definition of `A::B` in `<T as A>::B::C`.
             self.r.record_partial_res(node_id, partial_res);
             self.resolve_elided_lifetimes_in_path(partial_res, path, source, path_span);
+            self.lint_unused_qualifications(path, ns, finalize);
         }
 
         partial_res
@@ -4118,6 +4139,25 @@ impl<'a: 'ast, 'b, 'ast, 'tcx> LateResolutionVisitor<'a, 'b, 'ast, 'tcx> {
                     && PrimTy::from_name(path[0].ident.name).is_some() =>
             {
                 let prim = PrimTy::from_name(path[0].ident.name).unwrap();
+                let tcx = self.r.tcx();
+
+                let gate_err_sym_msg = match prim {
+                    PrimTy::Float(FloatTy::F16) if !tcx.features().f16 => {
+                        Some((sym::f16, "the type `f16` is unstable"))
+                    }
+                    PrimTy::Float(FloatTy::F128) if !tcx.features().f128 => {
+                        Some((sym::f128, "the type `f128` is unstable"))
+                    }
+                    _ => None,
+                };
+
+                if let Some((sym, msg)) = gate_err_sym_msg {
+                    let span = path[0].ident.span;
+                    if !span.allows_unstable(sym) {
+                        feature_err(tcx.sess, sym, span, msg).emit();
+                    }
+                };
+
                 PartialRes::with_unresolved_segments(Res::PrimTy(prim), path.len() - 1)
             }
             PathResult::Module(ModuleOrUniformRoot::Module(module)) => {
@@ -4144,39 +4184,6 @@ impl<'a: 'ast, 'b, 'ast, 'tcx> LateResolutionVisitor<'a, 'b, 'ast, 'tcx> {
             PathResult::Module(..) | PathResult::Failed { .. } => return Ok(None),
             PathResult::Indeterminate => bug!("indeterminate path result in resolve_qpath"),
         };
-
-        if path.iter().all(|seg| !seg.ident.span.from_expansion()) {
-            let end_pos =
-                path.iter().position(|seg| seg.has_generic_args).map_or(path.len(), |pos| pos + 1);
-            let unqualified =
-                path[..end_pos].iter().enumerate().skip(1).rev().find_map(|(i, seg)| {
-                    // Preserve the current namespace for the final path segment, but use the type
-                    // namespace for all preceding segments
-                    //
-                    // e.g. for `std::env::args` check the `ValueNS` for `args` but the `TypeNS` for
-                    // `std` and `env`
-                    //
-                    // If the final path segment is beyond `end_pos` all the segments to check will
-                    // use the type namespace
-                    let ns = if i + 1 == path.len() { ns } else { TypeNS };
-                    let res = self.r.partial_res_map.get(&seg.id?)?.full_res()?;
-                    let binding = self.resolve_ident_in_lexical_scope(seg.ident, ns, None, None)?;
-
-                    (res == binding.res()).then_some(seg)
-                });
-
-            if let Some(unqualified) = unqualified {
-                self.r.lint_buffer.buffer_lint_with_diagnostic(
-                    lint::builtin::UNUSED_QUALIFICATIONS,
-                    finalize.node_id,
-                    finalize.path_span,
-                    "unnecessary qualification",
-                    lint::BuiltinLintDiag::UnusedQualifications {
-                        removal_span: finalize.path_span.until(unqualified.ident.span),
-                    },
-                );
-            }
-        }
 
         Ok(Some(result))
     }
@@ -4654,6 +4661,38 @@ impl<'a: 'ast, 'b, 'ast, 'tcx> LateResolutionVisitor<'a, 'b, 'ast, 'tcx> {
                         .collect()
                 });
             self.r.doc_link_traits_in_scope = doc_link_traits_in_scope;
+        }
+    }
+
+    fn lint_unused_qualifications(&mut self, path: &[Segment], ns: Namespace, finalize: Finalize) {
+        if path.iter().any(|seg| seg.ident.span.from_expansion()) {
+            return;
+        }
+
+        let end_pos =
+            path.iter().position(|seg| seg.has_generic_args).map_or(path.len(), |pos| pos + 1);
+        let unqualified = path[..end_pos].iter().enumerate().skip(1).rev().find_map(|(i, seg)| {
+            // Preserve the current namespace for the final path segment, but use the type
+            // namespace for all preceding segments
+            //
+            // e.g. for `std::env::args` check the `ValueNS` for `args` but the `TypeNS` for
+            // `std` and `env`
+            //
+            // If the final path segment is beyond `end_pos` all the segments to check will
+            // use the type namespace
+            let ns = if i + 1 == path.len() { ns } else { TypeNS };
+            let res = self.r.partial_res_map.get(&seg.id?)?.full_res()?;
+            let binding = self.resolve_ident_in_lexical_scope(seg.ident, ns, None, None)?;
+            (res == binding.res()).then_some((seg, binding))
+        });
+
+        if let Some((seg, binding)) = unqualified {
+            self.r.potentially_unnecessary_qualifications.push(UnnecessaryQualification {
+                binding,
+                node_id: finalize.node_id,
+                path_span: finalize.path_span,
+                removal_span: path[0].ident.span.until(seg.ident.span),
+            });
         }
     }
 }

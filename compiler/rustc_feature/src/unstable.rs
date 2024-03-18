@@ -345,6 +345,8 @@ declare_features! (
     (unstable, asm_const, "1.58.0", Some(93332)),
     /// Enables experimental inline assembly support for additional architectures.
     (unstable, asm_experimental_arch, "1.58.0", Some(93335)),
+    /// Allows using `label` operands in inline assembly.
+    (unstable, asm_goto, "CURRENT_RUSTC_VERSION", Some(119364)),
     /// Allows the `may_unwind` option in inline assembly.
     (unstable, asm_unwind, "1.58.0", Some(93334)),
     /// Allows users to enforce equality of associated constants `TraitImpl<AssocConst=3>`.
@@ -436,8 +438,6 @@ declare_features! (
     (unstable, deprecated_safe, "1.61.0", Some(94978)),
     /// Allows having using `suggestion` in the `#[deprecated]` attribute.
     (unstable, deprecated_suggestion, "1.61.0", Some(94785)),
-    /// Allows using the `#[diagnostic]` attribute tool namespace
-    (unstable, diagnostic_namespace, "1.73.0", Some(111996)),
     /// Controls errors in trait implementations.
     (unstable, do_not_recommend, "1.67.0", Some(51992)),
     /// Tells rustdoc to automatically generate `#[doc(cfg(...))]`.
@@ -463,6 +463,10 @@ declare_features! (
     (unstable, extended_varargs_abi_support, "1.65.0", Some(100189)),
     /// Allows defining `extern type`s.
     (unstable, extern_types, "1.23.0", Some(43467)),
+    /// Allow using 128-bit (quad precision) floating point numbers.
+    (unstable, f128, "CURRENT_RUSTC_VERSION", Some(116909)),
+    /// Allow using 16-bit (half precision) floating point numbers.
+    (unstable, f16, "CURRENT_RUSTC_VERSION", Some(116909)),
     /// Allows the use of `#[ffi_const]` on foreign functions.
     (unstable, ffi_const, "1.45.0", Some(58328)),
     /// Allows the use of `#[ffi_pure]` on foreign functions.
@@ -471,6 +475,8 @@ declare_features! (
     (unstable, fn_align, "1.53.0", Some(82232)),
     /// Support delegating implementation of functions to other already implemented functions.
     (incomplete, fn_delegation, "1.76.0", Some(118212)),
+    /// Allows impls for the Freeze trait.
+    (internal, freeze_impls, "CURRENT_RUSTC_VERSION", Some(121675)),
     /// Allows defining gen blocks and `gen fn`.
     (unstable, gen_blocks, "1.75.0", Some(117078)),
     /// Infer generic args for both consts and types.

@@ -20,6 +20,7 @@ use rustc_span::symbol::Symbol;
 use rustc_span::symbol::{kw, sym};
 use rustc_span::{BytePos, Span};
 use std::iter;
+use std::ops::ControlFlow;
 
 declare_lint! {
     /// The `unused_must_use` lint detects unused result of a type flagged as
@@ -753,21 +754,18 @@ trait UnusedDelimLint {
         // fn f(){(print!(á
         // ```
         use rustc_ast::visit::{walk_expr, Visitor};
-        struct ErrExprVisitor {
-            has_error: bool,
-        }
+        struct ErrExprVisitor;
         impl<'ast> Visitor<'ast> for ErrExprVisitor {
-            fn visit_expr(&mut self, expr: &'ast ast::Expr) {
+            type Result = ControlFlow<()>;
+            fn visit_expr(&mut self, expr: &'ast ast::Expr) -> ControlFlow<()> {
                 if let ExprKind::Err(_) = expr.kind {
-                    self.has_error = true;
-                    return;
+                    ControlFlow::Break(())
+                } else {
+                    walk_expr(self, expr)
                 }
-                walk_expr(self, expr)
             }
         }
-        let mut visitor = ErrExprVisitor { has_error: false };
-        visitor.visit_expr(value);
-        if visitor.has_error {
+        if ErrExprVisitor.visit_expr(value).is_break() {
             return;
         }
         let spans = match value.kind {
@@ -916,7 +914,7 @@ trait UnusedDelimLint {
 
     fn check_stmt(&mut self, cx: &EarlyContext<'_>, s: &ast::Stmt) {
         match s.kind {
-            StmtKind::Local(ref local) if Self::LINT_EXPR_IN_PATTERN_MATCHING_CTX => {
+            StmtKind::Let(ref local) if Self::LINT_EXPR_IN_PATTERN_MATCHING_CTX => {
                 if let Some((init, els)) = local.kind.init_else_opt() {
                     let ctx = match els {
                         None => UnusedDelimsCtx::AssignedValue,
@@ -1191,7 +1189,7 @@ impl EarlyLintPass for UnusedParens {
     }
 
     fn check_stmt(&mut self, cx: &EarlyContext<'_>, s: &ast::Stmt) {
-        if let StmtKind::Local(ref local) = s.kind {
+        if let StmtKind::Let(ref local) = s.kind {
             self.check_unused_parens_pat(cx, &local.pat, true, false, (true, false));
         }
 

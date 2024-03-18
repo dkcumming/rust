@@ -129,7 +129,6 @@ symbols! {
         Abi,
         AcqRel,
         Acquire,
-        AddToDiagnostic,
         Any,
         Arc,
         ArcWeak,
@@ -184,10 +183,10 @@ symbols! {
         DebugStruct,
         Decodable,
         Decoder,
-        DecorateLint,
         Default,
         Deref,
         DiagMessage,
+        Diagnostic,
         DirBuilder,
         Display,
         DoubleEndedIterator,
@@ -223,7 +222,6 @@ symbols! {
         Input,
         Instant,
         Into,
-        IntoDiagnostic,
         IntoFuture,
         IntoIterator,
         IoLines,
@@ -243,6 +241,7 @@ symbols! {
         Layout,
         Left,
         LinkedList,
+        LintDiagnostic,
         LintPass,
         LocalKey,
         Mutex,
@@ -305,6 +304,7 @@ symbols! {
         String,
         StructuralPartialEq,
         SubdiagMessage,
+        Subdiagnostic,
         Sync,
         T,
         Target,
@@ -399,6 +399,7 @@ symbols! {
         asm,
         asm_const,
         asm_experimental_arch,
+        asm_goto,
         asm_sym,
         asm_unwind,
         assert,
@@ -517,6 +518,8 @@ symbols! {
         cfi,
         cfi_encoding,
         char,
+        check_language_ub,
+        check_library_ub,
         client,
         clippy,
         clobber_abi,
@@ -812,6 +815,9 @@ symbols! {
         fadd_algebraic,
         fadd_fast,
         fake_variadic,
+        fallback_to_never,
+        fallback_to_niko,
+        fallback_to_unit,
         fdiv_algebraic,
         fdiv_fast,
         feature,
@@ -861,6 +867,7 @@ symbols! {
         format_placeholder,
         format_unsafe_arg,
         freeze,
+        freeze_impls,
         freg,
         frem_algebraic,
         frem_fast,
@@ -896,6 +903,7 @@ symbols! {
         generic_const_items,
         generic_param_attrs,
         get_context,
+        global_alloc_ty,
         global_allocator,
         global_asm,
         globs,
@@ -996,6 +1004,11 @@ symbols! {
         is_val_statically_known,
         isa_attribute,
         isize,
+        isize_legacy_const_max,
+        isize_legacy_const_min,
+        isize_legacy_fn_max_value,
+        isize_legacy_fn_min_value,
+        isize_legacy_mod,
         issue,
         issue_5723_bootstrap,
         issue_tracker_base_url,
@@ -1195,6 +1208,7 @@ symbols! {
         negative_bounds,
         negative_impls,
         neon,
+        nested,
         never,
         never_patterns,
         never_type,
@@ -1222,6 +1236,7 @@ symbols! {
         no_crate_inject,
         no_debug,
         no_default_passes,
+        no_fallback,
         no_implicit_prelude,
         no_inline,
         no_link,
@@ -1448,6 +1463,7 @@ symbols! {
         residual,
         result,
         resume,
+        retag_box_to_raw,
         return_position_impl_trait_in_trait,
         return_type_notation,
         rhs,
@@ -1539,6 +1555,7 @@ symbols! {
         rustc_mir,
         rustc_must_implement_one_of,
         rustc_never_returns_null_ptr,
+        rustc_never_type_mode,
         rustc_no_mir_inline,
         rustc_nonnull_optimization_guaranteed,
         rustc_nounwind,
@@ -1905,6 +1922,11 @@ symbols! {
         used_with_arg,
         using,
         usize,
+        usize_legacy_const_max,
+        usize_legacy_const_min,
+        usize_legacy_fn_max_value,
+        usize_legacy_fn_min_value,
+        usize_legacy_mod,
         va_arg,
         va_copy,
         va_end,
@@ -2325,13 +2347,15 @@ pub mod sym {
     ///
     /// The first few non-negative integers each have a static symbol and therefore
     /// are fast.
-    pub fn integer<N: TryInto<usize> + Copy + ToString>(n: N) -> Symbol {
+    pub fn integer<N: TryInto<usize> + Copy + itoa::Integer>(n: N) -> Symbol {
         if let Result::Ok(idx) = n.try_into() {
             if idx < 10 {
                 return Symbol::new(super::SYMBOL_DIGITS_BASE + idx as u32);
             }
         }
-        Symbol::intern(&n.to_string())
+        let mut buffer = itoa::Buffer::new();
+        let printed = buffer.format(n);
+        Symbol::intern(printed)
     }
 }
 

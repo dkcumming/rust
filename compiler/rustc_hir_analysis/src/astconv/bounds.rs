@@ -149,7 +149,6 @@ impl<'tcx> dyn AstConv<'tcx> + '_ {
                         polarity,
                         param_ty,
                         bounds,
-                        false,
                         only_self_bounds,
                     );
                 }
@@ -231,14 +230,13 @@ impl<'tcx> dyn AstConv<'tcx> + '_ {
     /// **A note on binders:** given something like `T: for<'a> Iterator<Item = &'a u32>`, the
     /// `trait_ref` here will be `for<'a> T: Iterator`. The `binding` data however is from *inside*
     /// the binder (e.g., `&'a u32`) and hence may reference bound regions.
-    #[instrument(level = "debug", skip(self, bounds, speculative, dup_bindings, path_span))]
+    #[instrument(level = "debug", skip(self, bounds, dup_bindings, path_span))]
     pub(super) fn add_predicates_for_ast_type_binding(
         &self,
         hir_ref_id: hir::HirId,
         trait_ref: ty::PolyTraitRef<'tcx>,
         binding: &hir::TypeBinding<'tcx>,
         bounds: &mut Bounds<'tcx>,
-        speculative: bool,
         dup_bindings: &mut FxIndexMap<DefId, Span>,
         path_span: Span,
         only_self_bounds: OnlySelfBounds,
@@ -317,19 +315,17 @@ impl<'tcx> dyn AstConv<'tcx> + '_ {
         }
         tcx.check_stability(assoc_item.def_id, Some(hir_ref_id), binding.span, None);
 
-        if !speculative {
-            dup_bindings
-                .entry(assoc_item.def_id)
-                .and_modify(|prev_span| {
-                    tcx.dcx().emit_err(errors::ValueOfAssociatedStructAlreadySpecified {
-                        span: binding.span,
-                        prev_span: *prev_span,
-                        item_name: binding.ident,
-                        def_path: tcx.def_path_str(assoc_item.container_id(tcx)),
-                    });
-                })
-                .or_insert(binding.span);
-        }
+        dup_bindings
+            .entry(assoc_item.def_id)
+            .and_modify(|prev_span| {
+                tcx.dcx().emit_err(errors::ValueOfAssociatedStructAlreadySpecified {
+                    span: binding.span,
+                    prev_span: *prev_span,
+                    item_name: binding.ident,
+                    def_path: tcx.def_path_str(assoc_item.container_id(tcx)),
+                });
+            })
+            .or_insert(binding.span);
 
         let projection_ty = if let ty::AssocKind::Fn = assoc_kind {
             let mut emitted_bad_param_err = None;
@@ -408,7 +404,7 @@ impl<'tcx> dyn AstConv<'tcx> + '_ {
             // Create the generic arguments for the associated type or constant by joining the
             // parent arguments (the arguments of the trait) and the own arguments (the ones of
             // the associated item itself) and construct an alias type using them.
-            candidate.map_bound(|trait_ref| {
+            let alias_ty = candidate.map_bound(|trait_ref| {
                 let ident = Ident::new(assoc_item.name, binding.ident.span);
                 let item_segment = hir::PathSegment {
                     ident,
@@ -430,7 +426,24 @@ impl<'tcx> dyn AstConv<'tcx> + '_ {
                 // *constants* to represent *const projections*. Alias *term* would be a more
                 // appropriate name but alas.
                 ty::AliasTy::new(tcx, assoc_item.def_id, alias_args)
-            })
+            });
+
+            // Provide the resolved type of the associated constant to `type_of(AnonConst)`.
+            if let hir::TypeBindingKind::Equality { term: hir::Term::Const(anon_const) } =
+                binding.kind
+            {
+                let ty = alias_ty.map_bound(|ty| tcx.type_of(ty.def_id).instantiate(tcx, ty.args));
+                // Since the arguments passed to the alias type above may contain early-bound
+                // generic parameters, the instantiated type may contain some as well.
+                // Therefore wrap it in `EarlyBinder`.
+                // FIXME(fmease): Reject escaping late-bound vars.
+                tcx.feed_anon_const_type(
+                    anon_const.def_id,
+                    ty::EarlyBinder::bind(ty.skip_binder()),
+                );
+            }
+
+            alias_ty
         };
 
         match binding.kind {
@@ -445,42 +458,40 @@ impl<'tcx> dyn AstConv<'tcx> + '_ {
                     hir::Term::Const(ct) => ty::Const::from_anon_const(tcx, ct.def_id).into(),
                 };
 
-                if !speculative {
-                    // Find any late-bound regions declared in `ty` that are not
-                    // declared in the trait-ref or assoc_item. These are not well-formed.
-                    //
-                    // Example:
-                    //
-                    //     for<'a> <T as Iterator>::Item = &'a str // <-- 'a is bad
-                    //     for<'a> <T as FnMut<(&'a u32,)>>::Output = &'a str // <-- 'a is ok
-                    let late_bound_in_projection_ty =
-                        tcx.collect_constrained_late_bound_regions(projection_ty);
-                    let late_bound_in_term =
-                        tcx.collect_referenced_late_bound_regions(trait_ref.rebind(term));
-                    debug!(?late_bound_in_projection_ty);
-                    debug!(?late_bound_in_term);
+                // Find any late-bound regions declared in `ty` that are not
+                // declared in the trait-ref or assoc_item. These are not well-formed.
+                //
+                // Example:
+                //
+                //     for<'a> <T as Iterator>::Item = &'a str // <-- 'a is bad
+                //     for<'a> <T as FnMut<(&'a u32,)>>::Output = &'a str // <-- 'a is ok
+                let late_bound_in_projection_ty =
+                    tcx.collect_constrained_late_bound_regions(projection_ty);
+                let late_bound_in_term =
+                    tcx.collect_referenced_late_bound_regions(trait_ref.rebind(term));
+                debug!(?late_bound_in_projection_ty);
+                debug!(?late_bound_in_term);
 
-                    // FIXME: point at the type params that don't have appropriate lifetimes:
-                    // struct S1<F: for<'a> Fn(&i32, &i32) -> &'a i32>(F);
-                    //                         ----  ----     ^^^^^^^
-                    // NOTE(associated_const_equality): This error should be impossible to trigger
-                    //                                  with associated const equality bounds.
-                    self.validate_late_bound_regions(
-                        late_bound_in_projection_ty,
-                        late_bound_in_term,
-                        |br_name| {
-                            struct_span_code_err!(
-                                tcx.dcx(),
-                                binding.span,
-                                E0582,
-                                "binding for associated type `{}` references {}, \
-                                 which does not appear in the trait input types",
-                                binding.ident,
-                                br_name
-                            )
-                        },
-                    );
-                }
+                // FIXME: point at the type params that don't have appropriate lifetimes:
+                // struct S1<F: for<'a> Fn(&i32, &i32) -> &'a i32>(F);
+                //                         ----  ----     ^^^^^^^
+                // NOTE(associated_const_equality): This error should be impossible to trigger
+                //                                  with associated const equality bounds.
+                self.validate_late_bound_regions(
+                    late_bound_in_projection_ty,
+                    late_bound_in_term,
+                    |br_name| {
+                        struct_span_code_err!(
+                            tcx.dcx(),
+                            binding.span,
+                            E0582,
+                            "binding for associated type `{}` references {}, \
+                                which does not appear in the trait input types",
+                            binding.ident,
+                            br_name
+                        )
+                    },
+                );
 
                 // "Desugar" a constraint like `T: Iterator<Item = u32>` this to
                 // the "projection predicate" for:

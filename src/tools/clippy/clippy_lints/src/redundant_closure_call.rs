@@ -159,6 +159,15 @@ impl<'tcx> LateLintPass<'tcx> for RedundantClosureCall {
             //           ^^  we only want to lint for this call (but we walk up the calls to consider both calls).
             // without this check, we'd end up linting twice.
             && !matches!(recv.kind, hir::ExprKind::Call(..))
+            // Check if `recv` comes from a macro expansion. If it does, make sure that it's an expansion that is
+            // the same as the one the call is in.
+            // For instance, let's assume `x!()` returns a closure:
+            //    B ---v
+            //      x!()()
+            //          ^- A
+            // The call happens in the expansion `A`, while the closure originates from the expansion `B`.
+            // We don't want to suggest replacing `x!()()` with `x!()`.
+            && recv.span.ctxt().outer_expn() == expr.span.ctxt().outer_expn()
             && let (full_expr, call_depth) = get_parent_call_exprs(cx, expr)
             && let Some((body, fn_decl, coroutine_kind, params)) = find_innermost_closure(cx, recv, call_depth)
             // outside macros we lint properly. Inside macros, we lint only ||() style closures.
@@ -253,7 +262,7 @@ impl<'tcx> LateLintPass<'tcx> for RedundantClosureCall {
         }
 
         for w in block.stmts.windows(2) {
-            if let hir::StmtKind::Local(local) = w[0].kind
+            if let hir::StmtKind::Let(local) = w[0].kind
                 && let Option::Some(t) = local.init
                 && let hir::ExprKind::Closure { .. } = t.kind
                 && let hir::PatKind::Binding(_, _, ident, _) = local.pat.kind

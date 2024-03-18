@@ -52,8 +52,8 @@ use rustc_middle::metadata::ModChild;
 use rustc_middle::middle::privacy::EffectiveVisibilities;
 use rustc_middle::query::Providers;
 use rustc_middle::span_bug;
-use rustc_middle::ty::{self, MainDefinition, RegisteredTools, TyCtxt};
-use rustc_middle::ty::{ResolverGlobalCtxt, ResolverOutputs};
+use rustc_middle::ty::{self, MainDefinition, RegisteredTools, TyCtxt, TyCtxtFeed};
+use rustc_middle::ty::{Feed, ResolverGlobalCtxt, ResolverOutputs};
 use rustc_query_system::ich::StableHashingContext;
 use rustc_session::lint::builtin::PRIVATE_MACRO_USE;
 use rustc_session::lint::LintBuffer;
@@ -68,7 +68,7 @@ use std::fmt;
 
 use diagnostics::{ImportSuggestion, LabelSuggestion, Suggestion};
 use imports::{Import, ImportData, ImportKind, NameResolution};
-use late::{HasGenericParams, PathSource, PatternSource};
+use late::{HasGenericParams, PathSource, PatternSource, UnnecessaryQualification};
 use macros::{MacroRulesBinding, MacroRulesScope, MacroRulesScopeRef};
 
 use crate::effective_visibilities::EffectiveVisibilitiesVisitor;
@@ -372,7 +372,7 @@ impl<'a> From<&'a ast::PathSegment> for Segment {
 /// This refers to the thing referred by a name. The difference between `Res` and `Item` is that
 /// items are visible in their whole block, while `Res`es only from the place they are defined
 /// forward.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 enum LexicalScopeBinding<'a> {
     Item(NameBinding<'a>),
     Res(Res),
@@ -729,6 +729,8 @@ struct PrivacyError<'a> {
     dedup_span: Span,
     outermost_res: Option<(Res, Ident)>,
     parent_scope: ParentScope<'a>,
+    /// Is the format `use a::{b,c}`?
+    single_nested: bool,
 }
 
 #[derive(Debug)]
@@ -1103,6 +1105,8 @@ pub struct Resolver<'a, 'tcx> {
 
     potentially_unused_imports: Vec<Import<'a>>,
 
+    potentially_unnecessary_qualifications: Vec<UnnecessaryQualification<'a>>,
+
     /// Table for mapping struct IDs into struct constructor IDs,
     /// it's not used during normal resolution, only for better error reporting.
     /// Also includes of list of each fields visibility
@@ -1115,7 +1119,7 @@ pub struct Resolver<'a, 'tcx> {
 
     next_node_id: NodeId,
 
-    node_id_to_def_id: NodeMap<LocalDefId>,
+    node_id_to_def_id: NodeMap<Feed<'tcx, LocalDefId>>,
     def_id_to_node_id: IndexVec<LocalDefId, ast::NodeId>,
 
     /// Indices of unnamed struct or variant fields with unresolved attributes.
@@ -1231,11 +1235,19 @@ impl<'a, 'tcx> AsMut<Resolver<'a, 'tcx>> for Resolver<'a, 'tcx> {
 
 impl<'tcx> Resolver<'_, 'tcx> {
     fn opt_local_def_id(&self, node: NodeId) -> Option<LocalDefId> {
-        self.node_id_to_def_id.get(&node).copied()
+        self.opt_feed(node).map(|f| f.key())
     }
 
     fn local_def_id(&self, node: NodeId) -> LocalDefId {
-        self.opt_local_def_id(node).unwrap_or_else(|| panic!("no entry for node id: `{node:?}`"))
+        self.feed(node).key()
+    }
+
+    fn opt_feed(&self, node: NodeId) -> Option<Feed<'tcx, LocalDefId>> {
+        self.node_id_to_def_id.get(&node).copied()
+    }
+
+    fn feed(&self, node: NodeId) -> Feed<'tcx, LocalDefId> {
+        self.opt_feed(node).unwrap_or_else(|| panic!("no entry for node id: `{node:?}`"))
     }
 
     fn local_def_kind(&self, node: NodeId) -> DefKind {
@@ -1251,18 +1263,19 @@ impl<'tcx> Resolver<'_, 'tcx> {
         def_kind: DefKind,
         expn_id: ExpnId,
         span: Span,
-    ) -> LocalDefId {
+    ) -> TyCtxtFeed<'tcx, LocalDefId> {
         let data = def_kind.def_path_data(name);
         assert!(
             !self.node_id_to_def_id.contains_key(&node_id),
             "adding a def'n for node-id {:?} and data {:?} but a previous def'n exists: {:?}",
             node_id,
             data,
-            self.tcx.definitions_untracked().def_key(self.node_id_to_def_id[&node_id]),
+            self.tcx.definitions_untracked().def_key(self.node_id_to_def_id[&node_id].key()),
         );
 
         // FIXME: remove `def_span` body, pass in the right spans here and call `tcx.at().create_def()`
-        let def_id = self.tcx.create_def(parent, name, def_kind).def_id();
+        let feed = self.tcx.create_def(parent, name, def_kind);
+        let def_id = feed.def_id();
 
         // Create the definition.
         if expn_id != ExpnId::root() {
@@ -1279,11 +1292,11 @@ impl<'tcx> Resolver<'_, 'tcx> {
         // we don't need a mapping from `NodeId` to `LocalDefId`.
         if node_id != ast::DUMMY_NODE_ID {
             debug!("create_def: def_id_to_node_id[{:?}] <-> {:?}", def_id, node_id);
-            self.node_id_to_def_id.insert(node_id, def_id);
+            self.node_id_to_def_id.insert(node_id, feed.downgrade());
         }
         assert_eq!(self.def_id_to_node_id.push(node_id), def_id);
 
-        def_id
+        feed
     }
 
     fn item_generics_num_lifetimes(&self, def_id: DefId) -> usize {
@@ -1331,7 +1344,11 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         let mut def_id_to_node_id = IndexVec::default();
         assert_eq!(def_id_to_node_id.push(CRATE_NODE_ID), CRATE_DEF_ID);
         let mut node_id_to_def_id = NodeMap::default();
-        node_id_to_def_id.insert(CRATE_NODE_ID, CRATE_DEF_ID);
+        let crate_feed = tcx.create_local_crate_def_id(crate_span);
+
+        crate_feed.def_kind(DefKind::Mod);
+        let crate_feed = crate_feed.downgrade();
+        node_id_to_def_id.insert(CRATE_NODE_ID, crate_feed);
 
         let mut invocation_parents = FxHashMap::default();
         invocation_parents.insert(LocalExpnId::ROOT, (CRATE_DEF_ID, ImplTraitContext::Existential));
@@ -1449,6 +1466,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             local_macro_def_scopes: FxHashMap::default(),
             name_already_seen: FxHashMap::default(),
             potentially_unused_imports: Vec::new(),
+            potentially_unnecessary_qualifications: Default::default(),
             struct_constructors: Default::default(),
             unused_macros: Default::default(),
             unused_macro_rules: Default::default(),
@@ -1482,7 +1500,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
 
         let root_parent_scope = ParentScope::module(graph_root, &resolver);
         resolver.invocation_parent_scopes.insert(LocalExpnId::ROOT, root_parent_scope);
-        resolver.feed_visibility(CRATE_DEF_ID, ty::Visibility::Public);
+        resolver.feed_visibility(crate_feed, ty::Visibility::Public);
 
         resolver
     }
@@ -1530,9 +1548,10 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         Default::default()
     }
 
-    fn feed_visibility(&mut self, def_id: LocalDefId, vis: ty::Visibility) {
-        self.tcx.feed_local_def_id(def_id).visibility(vis.to_def_id());
-        self.visibilities_for_hashing.push((def_id, vis));
+    fn feed_visibility(&mut self, feed: Feed<'tcx, LocalDefId>, vis: ty::Visibility) {
+        let feed = feed.upgrade(self.tcx);
+        feed.visibility(vis.to_def_id());
+        self.visibilities_for_hashing.push((feed.def_id(), vis));
     }
 
     pub fn into_outputs(self) -> ResolverOutputs {
@@ -1545,12 +1564,16 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         let confused_type_with_std_module = self.confused_type_with_std_module;
         let effective_visibilities = self.effective_visibilities;
 
-        self.tcx.feed_local_crate().stripped_cfg_items(self.tcx.arena.alloc_from_iter(
-            self.stripped_cfg_items.into_iter().filter_map(|item| {
-                let parent_module = self.node_id_to_def_id.get(&item.parent_module)?.to_def_id();
-                Some(StrippedCfgItem { parent_module, name: item.name, cfg: item.cfg })
-            }),
-        ));
+        let stripped_cfg_items = Steal::new(
+            self.stripped_cfg_items
+                .into_iter()
+                .filter_map(|item| {
+                    let parent_module =
+                        self.node_id_to_def_id.get(&item.parent_module)?.key().to_def_id();
+                    Some(StrippedCfgItem { parent_module, name: item.name, cfg: item.cfg })
+                })
+                .collect(),
+        );
 
         let global_ctxt = ResolverGlobalCtxt {
             expn_that_defined,
@@ -1567,6 +1590,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             doc_link_resolutions: self.doc_link_resolutions,
             doc_link_traits_in_scope: self.doc_link_traits_in_scope,
             all_macro_rules: self.all_macro_rules,
+            stripped_cfg_items,
         };
         let ast_lowering = ty::ResolverAstLowering {
             legacy_const_generic_args: self.legacy_const_generic_args,
@@ -1576,7 +1600,11 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             lifetimes_res_map: self.lifetimes_res_map,
             extra_lifetime_params_map: self.extra_lifetime_params_map,
             next_node_id: self.next_node_id,
-            node_id_to_def_id: self.node_id_to_def_id,
+            node_id_to_def_id: self
+                .node_id_to_def_id
+                .into_items()
+                .map(|(k, f)| (k, f.key()))
+                .collect(),
             def_id_to_node_id: self.def_id_to_node_id,
             trait_map: self.trait_map,
             lifetime_elision_allowed: self.lifetime_elision_allowed,

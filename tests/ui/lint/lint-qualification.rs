@@ -1,5 +1,6 @@
 //@ run-rustfix
 #![deny(unused_qualifications)]
+#![deny(unused_imports)]
 #![allow(deprecated, dead_code)]
 
 mod foo {
@@ -22,7 +23,12 @@ fn main() {
     //~| ERROR: unnecessary qualification
 
     use std::fmt;
-    let _: std::fmt::Result = Ok(()); //~ ERROR: unnecessary qualification
+    //~^ ERROR: unused import: `std::fmt`
+    let _: std::fmt::Result = Ok(());
+    // don't report unnecessary qualification because fix(#122373) for issue #121331
+
+    let _ = <bool as ::std::default::Default>::default(); // issue #121999
+    //~^ ERROR: unnecessary qualification
 
     macro_rules! m { ($a:ident, $b:ident) => {
         $crate::foo::bar(); // issue #37357

@@ -47,14 +47,14 @@ impl<'tcx> assembly::GoalKind<'tcx> for TraitPredicate<'tcx> {
         let drcx = DeepRejectCtxt { treat_obligation_params: TreatParams::ForLookup };
         if !drcx.args_may_unify(
             goal.predicate.trait_ref.args,
-            impl_trait_header.skip_binder().trait_ref.args,
+            impl_trait_header.trait_ref.skip_binder().args,
         ) {
             return Err(NoSolution);
         }
 
         // An upper bound of the certainty of this goal, used to lower the certainty
         // of reservation impl to ambiguous during coherence.
-        let impl_polarity = impl_trait_header.skip_binder().polarity;
+        let impl_polarity = impl_trait_header.polarity;
         let maximal_certainty = match impl_polarity {
             ty::ImplPolarity::Positive | ty::ImplPolarity::Negative => {
                 match impl_polarity == goal.predicate.polarity {
@@ -70,7 +70,7 @@ impl<'tcx> assembly::GoalKind<'tcx> for TraitPredicate<'tcx> {
 
         ecx.probe_trait_candidate(CandidateSource::Impl(impl_def_id)).enter(|ecx| {
             let impl_args = ecx.fresh_args_for_item(impl_def_id);
-            let impl_trait_ref = impl_trait_header.instantiate(tcx, impl_args).trait_ref;
+            let impl_trait_ref = impl_trait_header.trait_ref.instantiate(tcx, impl_args);
 
             ecx.eq(goal.param_env, goal.predicate.trait_ref, impl_trait_ref)?;
             let where_clause_bounds = tcx
@@ -102,7 +102,6 @@ impl<'tcx> assembly::GoalKind<'tcx> for TraitPredicate<'tcx> {
             if trait_clause.def_id() == goal.predicate.def_id()
                 && trait_clause.polarity() == goal.predicate.polarity
             {
-                // FIXME: Constness
                 ecx.probe_misc_candidate("assumption").enter(|ecx| {
                     let assumption_trait_pred = ecx.instantiate_binder_with_infer(trait_clause);
                     ecx.eq(
@@ -251,6 +250,7 @@ impl<'tcx> assembly::GoalKind<'tcx> for TraitPredicate<'tcx> {
     ) -> QueryResult<'tcx> {
         let self_ty = goal.predicate.self_ty();
         match goal.predicate.polarity {
+            // impl FnPtr for FnPtr {}
             ty::ImplPolarity::Positive => {
                 if self_ty.is_fn_ptr() {
                     ecx.evaluate_added_goals_and_make_canonical_response(Certainty::Yes)
@@ -258,6 +258,7 @@ impl<'tcx> assembly::GoalKind<'tcx> for TraitPredicate<'tcx> {
                     Err(NoSolution)
                 }
             }
+            //  impl !FnPtr for T where T != FnPtr && T is rigid {}
             ty::ImplPolarity::Negative => {
                 // If a type is rigid and not a fn ptr, then we know for certain
                 // that it does *not* implement `FnPtr`.
@@ -375,6 +376,12 @@ impl<'tcx> assembly::GoalKind<'tcx> for TraitPredicate<'tcx> {
         }
     }
 
+    /// ```rust, ignore (not valid rust syntax)
+    /// impl Tuple for () {}
+    /// impl Tuple for (T1,) {}
+    /// impl Tuple for (T1, T2) {}
+    /// impl Tuple for (T1, .., Tn) {}
+    /// ```
     fn consider_builtin_tuple_candidate(
         ecx: &mut EvalCtxt<'_, 'tcx>,
         goal: Goal<'tcx, Self>,

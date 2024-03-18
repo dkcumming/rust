@@ -266,8 +266,10 @@ pub struct Config {
     pub logfile: Option<PathBuf>,
 
     /// A command line to prefix program execution with,
-    /// for running under valgrind
-    pub runtool: Option<String>,
+    /// for running under valgrind for example.
+    ///
+    /// Similar to `CARGO_*_RUNNER` configuration.
+    pub runner: Option<String>,
 
     /// Flags to pass to the compiler when building for the host
     pub host_rustcflags: Vec<String>,
@@ -449,6 +451,15 @@ impl Config {
 
     pub fn can_unwind(&self) -> bool {
         self.target_cfg().panic == PanicStrategy::Unwind
+    }
+
+    pub fn has_threads(&self) -> bool {
+        // Wasm targets don't have threads unless `-threads` is in the target
+        // name, such as `wasm32-wasip1-threads`.
+        if self.target.starts_with("wasm") {
+            return self.target.contains("threads");
+        }
+        true
     }
 
     pub fn has_asm_support(&self) -> bool {

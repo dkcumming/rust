@@ -627,7 +627,7 @@ pub fn walk_block<'v, V: Visitor<'v>>(visitor: &mut V, block: &'v Block<'v>) -> 
 pub fn walk_stmt<'v, V: Visitor<'v>>(visitor: &mut V, statement: &'v Stmt<'v>) -> V::Result {
     try_visit!(visitor.visit_id(statement.hir_id));
     match statement.kind {
-        StmtKind::Local(ref local) => visitor.visit_local(local),
+        StmtKind::Let(ref local) => visitor.visit_local(local),
         StmtKind::Item(item) => visitor.visit_nested_item(item),
         StmtKind::Expr(ref expression) | StmtKind::Semi(ref expression) => {
             visitor.visit_expr(expression)
@@ -1289,6 +1289,7 @@ pub fn walk_inline_asm<'v, V: Visitor<'v>>(
             InlineAsmOperand::SymStatic { path, .. } => {
                 try_visit!(visitor.visit_qpath(path, id, *op_sp));
             }
+            InlineAsmOperand::Label { block } => try_visit!(visitor.visit_block(block)),
         }
     }
     V::Result::output()

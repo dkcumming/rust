@@ -339,7 +339,7 @@ fn compute_bidirectional_outlives_predicates<'tcx>(
     predicates: &mut Vec<(ty::Clause<'tcx>, Span)>,
 ) {
     for param in opaque_own_params {
-        let orig_lifetime = tcx.map_rpit_lifetime_to_fn_lifetime(param.def_id.expect_local());
+        let orig_lifetime = tcx.map_opaque_lifetime_to_parent_lifetime(param.def_id.expect_local());
         if let ty::ReEarlyParam(..) = *orig_lifetime {
             let dup_lifetime = ty::Region::new_early_param(
                 tcx,
@@ -609,10 +609,8 @@ pub(super) fn implied_predicates_with_filter(
         return tcx.super_predicates_of(trait_def_id);
     };
 
-    let trait_hir_id = tcx.local_def_id_to_hir_id(trait_def_id);
-
-    let Node::Item(item) = tcx.hir_node(trait_hir_id) else {
-        bug!("trait_node_id {} is not an item", trait_hir_id);
+    let Node::Item(item) = tcx.hir_node_by_def_id(trait_def_id) else {
+        bug!("trait_def_id {trait_def_id:?} is not an item");
     };
 
     let (generics, bounds) = match item.kind {

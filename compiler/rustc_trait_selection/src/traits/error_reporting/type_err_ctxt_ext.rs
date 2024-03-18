@@ -19,6 +19,7 @@ use crate::traits::{
     ObligationCause, ObligationCauseCode, ObligationCtxt, Overflow, PredicateObligation,
     SelectionError, SignatureMismatch, TraitNotObjectSafe,
 };
+use core::ops::ControlFlow;
 use rustc_data_structures::fx::{FxHashMap, FxIndexMap};
 use rustc_errors::codes::*;
 use rustc_errors::{pluralize, struct_span_code_err, Applicability, MultiSpan, StringPart};
@@ -31,7 +32,7 @@ use rustc_hir::{GenericParam, Item, Node};
 use rustc_infer::infer::error_reporting::TypeErrCtxt;
 use rustc_infer::infer::{InferOk, TypeTrace};
 use rustc_middle::traits::select::OverflowError;
-use rustc_middle::traits::{DefiningAnchor, SignatureMismatchData};
+use rustc_middle::traits::SignatureMismatchData;
 use rustc_middle::ty::abstract_const::NotConstEvaluatable;
 use rustc_middle::ty::error::{ExpectedFound, TypeError};
 use rustc_middle::ty::fold::{BottomUpFolder, TypeFolder, TypeSuperFoldable};
@@ -1126,22 +1127,20 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
         err: &mut Diag<'_>,
     ) -> bool {
         let span = obligation.cause.span;
-        struct V<'v> {
+        struct V {
             search_span: Span,
-            found: Option<&'v hir::Expr<'v>>,
         }
-        impl<'v> Visitor<'v> for V<'v> {
-            fn visit_expr(&mut self, ex: &'v hir::Expr<'v>) {
+        impl<'v> Visitor<'v> for V {
+            type Result = ControlFlow<&'v hir::Expr<'v>>;
+            fn visit_expr(&mut self, ex: &'v hir::Expr<'v>) -> Self::Result {
                 if let hir::ExprKind::Match(expr, _arms, hir::MatchSource::TryDesugar(_)) = ex.kind
+                    && ex.span.with_lo(ex.span.hi() - BytePos(1)).source_equal(self.search_span)
+                    && let hir::ExprKind::Call(_, [expr, ..]) = expr.kind
                 {
-                    if ex.span.with_lo(ex.span.hi() - BytePos(1)).source_equal(self.search_span) {
-                        if let hir::ExprKind::Call(_, [expr, ..]) = expr.kind {
-                            self.found = Some(expr);
-                            return;
-                        }
-                    }
+                    ControlFlow::Break(expr)
+                } else {
+                    hir::intravisit::walk_expr(self, ex)
                 }
-                hir::intravisit::walk_expr(self, ex);
             }
         }
         let hir_id = self.tcx.local_def_id_to_hir_id(obligation.cause.body_id);
@@ -1149,9 +1148,9 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
             hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, body_id), .. }) => body_id,
             _ => return false,
         };
-        let mut v = V { search_span: span, found: None };
-        v.visit_body(self.tcx.hir().body(*body_id));
-        let Some(expr) = v.found else {
+        let ControlFlow::Break(expr) =
+            (V { search_span: span }).visit_body(self.tcx.hir().body(*body_id))
+        else {
             return false;
         };
         let Some(typeck) = &self.typeck_results else {
@@ -1431,45 +1430,64 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
 
 #[extension(pub(super) trait InferCtxtPrivExt<'tcx>)]
 impl<'tcx> TypeErrCtxt<'_, 'tcx> {
+    fn can_match_trait(
+        &self,
+        goal: ty::TraitPredicate<'tcx>,
+        assumption: ty::PolyTraitPredicate<'tcx>,
+    ) -> bool {
+        if goal.polarity != assumption.polarity() {
+            return false;
+        }
+
+        let trait_goal = goal.trait_ref;
+        let trait_assumption = self.instantiate_binder_with_fresh_vars(
+            DUMMY_SP,
+            infer::BoundRegionConversionTime::HigherRankedType,
+            assumption.to_poly_trait_ref(),
+        );
+
+        self.can_eq(ty::ParamEnv::empty(), trait_goal, trait_assumption)
+    }
+
+    fn can_match_projection(
+        &self,
+        goal: ty::ProjectionPredicate<'tcx>,
+        assumption: ty::PolyProjectionPredicate<'tcx>,
+    ) -> bool {
+        let assumption = self.instantiate_binder_with_fresh_vars(
+            DUMMY_SP,
+            infer::BoundRegionConversionTime::HigherRankedType,
+            assumption,
+        );
+
+        let param_env = ty::ParamEnv::empty();
+        self.can_eq(param_env, goal.projection_ty, assumption.projection_ty)
+            && self.can_eq(param_env, goal.term, assumption.term)
+    }
+
     // returns if `cond` not occurring implies that `error` does not occur - i.e., that
     // `error` occurring implies that `cond` occurs.
+    #[instrument(level = "debug", skip(self), ret)]
     fn error_implies(&self, cond: ty::Predicate<'tcx>, error: ty::Predicate<'tcx>) -> bool {
         if cond == error {
             return true;
         }
 
-        // FIXME: It should be possible to deal with `ForAll` in a cleaner way.
-        let bound_error = error.kind();
-        let (cond, error) = match (cond.kind().skip_binder(), bound_error.skip_binder()) {
-            (
-                ty::PredicateKind::Clause(ty::ClauseKind::Trait(..)),
-                ty::PredicateKind::Clause(ty::ClauseKind::Trait(error)),
-            ) => (cond, bound_error.rebind(error)),
-            _ => {
-                // FIXME: make this work in other cases too.
-                return false;
-            }
-        };
-
-        for pred in elaborate(self.tcx, std::iter::once(cond)) {
-            let bound_predicate = pred.kind();
-            if let ty::PredicateKind::Clause(ty::ClauseKind::Trait(implication)) =
-                bound_predicate.skip_binder()
-            {
-                let error = error.to_poly_trait_ref();
-                let implication = bound_predicate.rebind(implication.trait_ref);
-                // FIXME: I'm just not taking associated types at all here.
-                // Eventually I'll need to implement param-env-aware
-                // `Γ₁ ⊦ φ₁ => Γ₂ ⊦ φ₂` logic.
-                let param_env = ty::ParamEnv::empty();
-                if self.can_sub(param_env, error, implication) {
-                    debug!("error_implies: {:?} -> {:?} -> {:?}", cond, error, implication);
-                    return true;
-                }
-            }
+        if let Some(error) = error.to_opt_poly_trait_pred() {
+            self.enter_forall(error, |error| {
+                elaborate(self.tcx, std::iter::once(cond))
+                    .filter_map(|implied| implied.to_opt_poly_trait_pred())
+                    .any(|implied| self.can_match_trait(error, implied))
+            })
+        } else if let Some(error) = error.to_opt_poly_projection_pred() {
+            self.enter_forall(error, |error| {
+                elaborate(self.tcx, std::iter::once(cond))
+                    .filter_map(|implied| implied.to_opt_poly_projection_pred())
+                    .any(|implied| self.can_match_projection(error, implied))
+            })
+        } else {
+            false
         }
-
-        false
     }
 
     #[instrument(skip(self), level = "debug")]
@@ -1888,13 +1906,13 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
             .tcx
             .all_impls(trait_pred.def_id())
             .filter_map(|def_id| {
-                let imp = self.tcx.impl_trait_header(def_id).unwrap().skip_binder();
+                let imp = self.tcx.impl_trait_header(def_id).unwrap();
                 if imp.polarity == ty::ImplPolarity::Negative
                     || !self.tcx.is_user_visible_dep(def_id.krate)
                 {
                     return None;
                 }
-                let imp = imp.trait_ref;
+                let imp = imp.trait_ref.skip_binder();
 
                 self.fuzzy_match_tys(trait_pred.skip_binder().self_ty(), imp.self_ty(), false).map(
                     |similarity| ImplCandidate { trait_ref: imp, similarity, impl_def_id: def_id },
@@ -2078,12 +2096,11 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                 .all_impls(def_id)
                 // Ignore automatically derived impls and `!Trait` impls.
                 .filter_map(|def_id| self.tcx.impl_trait_header(def_id))
-                .map(ty::EarlyBinder::instantiate_identity)
-                .filter(|header| {
-                    header.polarity != ty::ImplPolarity::Negative
-                        || self.tcx.is_automatically_derived(def_id)
+                .filter_map(|header| {
+                    (header.polarity != ty::ImplPolarity::Negative
+                        || self.tcx.is_automatically_derived(def_id))
+                    .then(|| header.trait_ref.instantiate_identity())
                 })
-                .map(|header| header.trait_ref)
                 .filter(|trait_ref| {
                     let self_ty = trait_ref.self_ty();
                     // Avoid mentioning type parameters.
@@ -2480,11 +2497,11 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                         err.code(E0790);
 
                         if let Some(local_def_id) = data.trait_ref.def_id.as_local()
-                            && let Some(hir::Node::Item(hir::Item {
+                            && let hir::Node::Item(hir::Item {
                                 ident: trait_name,
                                 kind: hir::ItemKind::Trait(_, _, _, _, trait_item_refs),
                                 ..
-                            })) = self.tcx.opt_hir_node_by_def_id(local_def_id)
+                            }) = self.tcx.hir_node_by_def_id(local_def_id)
                             && let Some(method_ref) = trait_item_refs
                                 .iter()
                                 .find(|item_ref| item_ref.ident == *assoc_item_name)
@@ -3056,23 +3073,30 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                 let src = trait_ref.args.type_at(1);
                 let err_msg = format!("`{src}` cannot be safely transmuted into `{dst}`");
                 let safe_transmute_explanation = match reason {
-                    rustc_transmute::Reason::SrcIsUnspecified => {
-                        format!("`{src}` does not have a well-specified layout")
+                    rustc_transmute::Reason::SrcIsNotYetSupported => {
+                        format!("analyzing the transmutability of `{src}` is not yet supported.")
                     }
 
-                    rustc_transmute::Reason::DstIsUnspecified => {
-                        format!("`{dst}` does not have a well-specified layout")
+                    rustc_transmute::Reason::DstIsNotYetSupported => {
+                        format!("analyzing the transmutability of `{dst}` is not yet supported.")
                     }
 
                     rustc_transmute::Reason::DstIsBitIncompatible => {
-                        format!("At least one value of `{src}` isn't a bit-valid value of `{dst}`")
+                        format!("at least one value of `{src}` isn't a bit-valid value of `{dst}`")
                     }
 
                     rustc_transmute::Reason::DstMayHaveSafetyInvariants => {
                         format!("`{dst}` may carry safety invariants")
                     }
                     rustc_transmute::Reason::DstIsTooBig => {
-                        format!("The size of `{src}` is smaller than the size of `{dst}`")
+                        format!("the size of `{src}` is smaller than the size of `{dst}`")
+                    }
+                    rustc_transmute::Reason::DstRefIsTooBig { src, dst } => {
+                        let src_size = src.size;
+                        let dst_size = dst.size;
+                        format!(
+                            "the referent size of `{src}` ({src_size} bytes) is smaller than that of `{dst}` ({dst_size} bytes)"
+                        )
                     }
                     rustc_transmute::Reason::SrcSizeOverflow => {
                         format!(
@@ -3089,7 +3113,7 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                         dst_min_align,
                     } => {
                         format!(
-                            "The minimum alignment of `{src}` ({src_min_align}) should be greater than that of `{dst}` ({dst_min_align})"
+                            "the minimum alignment of `{src}` ({src_min_align}) should be greater than that of `{dst}` ({dst_min_align})"
                         )
                     }
                     rustc_transmute::Reason::DstIsMoreUnique => {
@@ -3373,25 +3397,20 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
             obligation.cause.span,
             format!("cannot check whether the hidden type of {name} satisfies auto traits"),
         );
+
+        err.note(
+            "fetching the hidden types of an opaque inside of the defining scope is not supported. \
+            You can try moving the opaque type and the item that actually registers a hidden type into a new submodule",
+        );
         err.span_note(self.tcx.def_span(def_id), "opaque type is declared here");
-        match self.defining_use_anchor {
-            DefiningAnchor::Bubble | DefiningAnchor::Error => {}
-            DefiningAnchor::Bind(bind) => {
-                err.span_note(
-                    self.tcx.def_ident_span(bind).unwrap_or_else(|| self.tcx.def_span(bind)),
-                    "this item depends on auto traits of the hidden type, \
-                    but may also be registering the hidden type. \
-                    This is not supported right now. \
-                    You can try moving the opaque type and the item that actually registers a hidden type into a new submodule".to_string(),
-                );
-            }
-        };
 
         self.note_obligation_cause(&mut err, &obligation);
         self.point_at_returns_when_relevant(&mut err, &obligation);
         self.dcx().try_steal_replace_and_emit_err(self.tcx.def_span(def_id), StashKey::Cycle, err)
     }
 
+    // FIXME(@lcnr): This function could be changed to trait `TraitRef` directly
+    // instead of using a `Binder`.
     fn report_signature_mismatch_error(
         &self,
         obligation: &PredicateObligation<'tcx>,

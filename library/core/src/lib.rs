@@ -112,6 +112,7 @@
 //
 // Library features:
 // tidy-alphabetical-start
+#![feature(array_ptr_get)]
 #![feature(char_indices_offset)]
 #![feature(const_align_of_val)]
 #![feature(const_align_of_val_raw)]
@@ -202,7 +203,11 @@
 //
 // Language features:
 // tidy-alphabetical-start
+#![cfg_attr(bootstrap, feature(diagnostic_namespace))]
+#![cfg_attr(bootstrap, feature(exhaustive_patterns))]
 #![cfg_attr(bootstrap, feature(platform_intrinsics))]
+#![cfg_attr(not(bootstrap), feature(freeze_impls))]
+#![cfg_attr(not(bootstrap), feature(min_exhaustive_patterns))]
 #![feature(abi_unadjusted)]
 #![feature(adt_const_params)]
 #![feature(allow_internal_unsafe)]
@@ -223,12 +228,10 @@
 #![feature(const_trait_impl)]
 #![feature(decl_macro)]
 #![feature(deprecated_suggestion)]
-#![feature(diagnostic_namespace)]
 #![feature(doc_cfg)]
 #![feature(doc_cfg_hide)]
 #![feature(doc_notable_trait)]
 #![feature(effects)]
-#![feature(exhaustive_patterns)]
 #![feature(extern_types)]
 #![feature(fundamental)]
 #![feature(generic_arg_infer)]

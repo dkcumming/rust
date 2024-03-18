@@ -8,8 +8,8 @@ use crate::errors::{
     ItemsInTraitsAreNotImportable,
 };
 use crate::Determinacy::{self, *};
-use crate::Namespace::*;
 use crate::{module_to_string, names_to_string, ImportSuggestion};
+use crate::{AmbiguityError, Namespace::*};
 use crate::{AmbiguityKind, BindingKey, ResolutionError, Resolver, Segment};
 use crate::{Finalize, Module, ModuleOrUniformRoot, ParentScope, PerNS, ScopeSet};
 use crate::{NameBinding, NameBindingData, NameBindingKind, PathResult, Used};
@@ -538,7 +538,6 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             .chain(indeterminate_imports.iter().map(|i| (true, i)))
         {
             let unresolved_import_error = self.finalize_import(*import);
-
             // If this import is unresolved then create a dummy import
             // resolution for it so that later resolve stages won't complain.
             self.import_dummy_binding(*import, is_indeterminate);
@@ -716,7 +715,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                         &mut diag,
                         Some(err.span),
                         candidates,
-                        DiagMode::Import,
+                        DiagMode::Import { append: false },
                         (source != target)
                             .then(|| format!(" as {target}"))
                             .as_deref()
@@ -856,7 +855,9 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             ImportKind::Single { target_bindings, .. } => target_bindings[TypeNS].get(),
             _ => None,
         };
-        let prev_ambiguity_errors_len = self.ambiguity_errors.len();
+        let ambiguity_errors_len =
+            |errors: &Vec<AmbiguityError<'_>>| errors.iter().filter(|error| !error.warning).count();
+        let prev_ambiguity_errors_len = ambiguity_errors_len(&self.ambiguity_errors);
         let finalize = Finalize::with_root_span(import.root_id, import.span, import.root_span);
 
         // We'll provide more context to the privacy errors later, up to `len`.
@@ -870,7 +871,8 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
             ignore_binding,
         );
 
-        let no_ambiguity = self.ambiguity_errors.len() == prev_ambiguity_errors_len;
+        let no_ambiguity =
+            ambiguity_errors_len(&self.ambiguity_errors) == prev_ambiguity_errors_len;
         import.vis.set(orig_vis);
         let module = match path_res {
             PathResult::Module(module) => {
@@ -1304,7 +1306,7 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         None
     }
 
-    pub(crate) fn check_for_redundant_imports(&mut self, import: Import<'a>) {
+    pub(crate) fn check_for_redundant_imports(&mut self, import: Import<'a>) -> bool {
         // This function is only called for single imports.
         let ImportKind::Single {
             source, target, ref source_bindings, ref target_bindings, id, ..
@@ -1315,12 +1317,12 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
 
         // Skip if the import is of the form `use source as target` and source != target.
         if source != target {
-            return;
+            return false;
         }
 
         // Skip if the import was produced by a macro.
         if import.parent_scope.expansion != LocalExpnId::ROOT {
-            return;
+            return false;
         }
 
         // Skip if we are inside a named module (in contrast to an anonymous
@@ -1330,13 +1332,11 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
         if import.used.get() == Some(Used::Other)
             || self.effective_visibilities.is_exported(self.local_def_id(id))
         {
-            return;
+            return false;
         }
 
         let mut is_redundant = true;
-
         let mut redundant_span = PerNS { value_ns: None, type_ns: None, macro_ns: None };
-
         self.per_ns(|this, ns| {
             if is_redundant && let Ok(binding) = source_bindings[ns].get() {
                 if binding.res() == Res::Err {
@@ -1375,7 +1375,10 @@ impl<'a, 'tcx> Resolver<'a, 'tcx> {
                 format!("the item `{source}` is imported redundantly"),
                 BuiltinLintDiag::RedundantImport(redundant_spans, source),
             );
+            return true;
         }
+
+        false
     }
 
     fn resolve_glob_import(&mut self, import: Import<'a>) {

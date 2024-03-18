@@ -31,8 +31,9 @@ use proc_macro::bridge::client::ProcMacro;
 use std::error::Error;
 use std::ops::Fn;
 use std::path::Path;
+use std::str::FromStr;
 use std::time::Duration;
-use std::{cmp, iter};
+use std::{cmp, env, iter};
 
 /// The backend's way to give the crate store access to the metadata in a library.
 /// Note that it returns the raw metadata bytes stored in the library file, whether
@@ -397,7 +398,8 @@ impl<'a, 'tcx> CrateLoader<'a, 'tcx> {
         name: Symbol,
         private_dep: Option<bool>,
     ) -> Result<CrateNum, CrateError> {
-        let _prof_timer = self.sess.prof.generic_activity("metadata_register_crate");
+        let _prof_timer =
+            self.sess.prof.generic_activity_with_arg("metadata_register_crate", name.as_str());
 
         let Library { source, metadata } = lib;
         let crate_root = metadata.get_root();
@@ -947,6 +949,7 @@ impl<'a, 'tcx> CrateLoader<'a, 'tcx> {
         }
     }
 
+    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
     fn report_unused_deps(&mut self, krate: &ast::Crate) {
         // Make a point span rather than covering the whole file
         let span = krate.spans.inner_span.shrink_to_lo();
@@ -984,6 +987,44 @@ impl<'a, 'tcx> CrateLoader<'a, 'tcx> {
         }
     }
 
+    fn report_future_incompatible_deps(&self, krate: &ast::Crate) {
+        let name = self.tcx.crate_name(LOCAL_CRATE);
+
+        if name.as_str() == "wasm_bindgen" {
+            let major = env::var("CARGO_PKG_VERSION_MAJOR")
+                .ok()
+                .and_then(|major| u64::from_str(&major).ok());
+            let minor = env::var("CARGO_PKG_VERSION_MINOR")
+                .ok()
+                .and_then(|minor| u64::from_str(&minor).ok());
+            let patch = env::var("CARGO_PKG_VERSION_PATCH")
+                .ok()
+                .and_then(|patch| u64::from_str(&patch).ok());
+
+            match (major, minor, patch) {
+                // v1 or bigger is valid.
+                (Some(1..), _, _) => return,
+                // v0.3 or bigger is valid.
+                (Some(0), Some(3..), _) => return,
+                // v0.2.88 or bigger is valid.
+                (Some(0), Some(2), Some(88..)) => return,
+                // Not using Cargo.
+                (None, None, None) => return,
+                _ => (),
+            }
+
+            // Make a point span rather than covering the whole file
+            let span = krate.spans.inner_span.shrink_to_lo();
+
+            self.sess.psess.buffer_lint(
+                lint::builtin::WASM_C_ABI,
+                span,
+                ast::CRATE_NODE_ID,
+                crate::fluent_generated::metadata_wasm_c_abi,
+            );
+        }
+    }
+
     pub fn postprocess(&mut self, krate: &ast::Crate) {
         self.inject_forced_externs();
         self.inject_profiler_runtime(krate);
@@ -991,6 +1032,7 @@ impl<'a, 'tcx> CrateLoader<'a, 'tcx> {
         self.inject_panic_runtime(krate);
 
         self.report_unused_deps(krate);
+        self.report_future_incompatible_deps(krate);
 
         info!("{:?}", CrateDump(self.cstore));
     }
@@ -1132,7 +1174,13 @@ fn load_dylib(path: &Path, max_attempts: usize) -> Result<libloading::Library, S
             Err(err) => {
                 // Only try to recover from this specific error.
                 if !matches!(err, libloading::Error::LoadLibraryExW { .. }) {
-                    return Err(err.to_string());
+                    let err = format_dlopen_err(&err);
+                    // We include the path of the dylib in the error ourselves, so
+                    // if it's in the error, we strip it.
+                    if let Some(err) = err.strip_prefix(&format!(": {}", path.display())) {
+                        return Err(err.to_string());
+                    }
+                    return Err(err);
                 }
 
                 last_error = Some(err);

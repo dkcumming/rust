@@ -389,7 +389,7 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
     ),
 
     // Entry point:
-    gated!(unix_sigpipe, Normal, template!(Word, NameValueStr: "inherit|sig_ign|sig_dfl"), ErrorFollowing, experimental!(unix_sigpipe)),
+    gated!(unix_sigpipe, Normal, template!(NameValueStr: "inherit|sig_ign|sig_dfl"), ErrorFollowing, experimental!(unix_sigpipe)),
     ungated!(start, Normal, template!(Word), WarnFollowing, @only_local: true),
     ungated!(no_start, CrateLevel, template!(Word), WarnFollowing, @only_local: true),
     ungated!(no_main, CrateLevel, template!(Word), WarnFollowing, @only_local: true),
@@ -580,6 +580,13 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
         "`may_dangle` has unstable semantics and may be removed in the future",
     ),
 
+    rustc_attr!(
+        rustc_never_type_mode, Normal, template!(NameValueStr: "fallback_to_unit|fallback_to_niko|fallback_to_never|no_fallback"), ErrorFollowing,
+        @only_local: true,
+        "`rustc_never_type_fallback` is used to experiment with never type fallback and work on \
+         never type stabilization, and will never be stable"
+    ),
+
     // ==========================================================================
     // Internal attributes: Runtime related:
     // ==========================================================================
@@ -695,8 +702,8 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
     // Used by the `rustc::potential_query_instability` lint to warn methods which
     // might not be stable during incremental compilation.
     rustc_attr!(rustc_lint_query_instability, Normal, template!(Word), WarnFollowing, INTERNAL_UNSTABLE),
-    // Used by the `rustc::untranslatable_diagnostic` and `rustc::diagnostic_outside_of_impl` lints
-    // to assist in changes to diagnostic APIs.
+    // Used by the `rustc::diagnostic_outside_of_impl` lints to assist in changes to diagnostic
+    // APIs. Any function with this attribute will be checked by that lint.
     rustc_attr!(rustc_lint_diagnostics, Normal, template!(Word), WarnFollowing, INTERNAL_UNSTABLE),
     // Used by the `rustc::bad_opt_access` lint to identify `DebuggingOptions` and `CodegenOptions`
     // types (as well as any others in future).
@@ -709,7 +716,9 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
     // Internal attributes, Const related:
     // ==========================================================================
 
-    rustc_attr!(rustc_promotable, Normal, template!(Word), WarnFollowing, IMPL_DETAIL),
+    rustc_attr!(
+        rustc_promotable, Normal, template!(Word), WarnFollowing,
+        @only_local: true, IMPL_DETAIL),
     rustc_attr!(
         rustc_legacy_const_generics, Normal, template!(List: "N"), ErrorFollowing,
         INTERNAL_UNSTABLE
@@ -784,7 +793,7 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
          the given type by annotating all impl items with #[rustc_allow_incoherent_impl]."
     ),
     rustc_attr!(
-        rustc_box, AttributeType::Normal, template!(Word), ErrorFollowing,
+        rustc_box, AttributeType::Normal, template!(Word), ErrorFollowing, @only_local: true,
         "#[rustc_box] allows creating boxes \
         and it is only intended to be used in `alloc`."
     ),
@@ -806,11 +815,11 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
     gated!(
         // Used in resolve:
         prelude_import, Normal, template!(Word), WarnFollowing,
-        "`#[prelude_import]` is for use by rustc only",
+        @only_local: true, "`#[prelude_import]` is for use by rustc only",
     ),
     gated!(
-        rustc_paren_sugar, Normal, template!(Word), WarnFollowing, unboxed_closures,
-        "unboxed_closures are still evolving",
+        rustc_paren_sugar, Normal, template!(Word), WarnFollowing, @only_local: true,
+        unboxed_closures, "unboxed_closures are still evolving",
     ),
     rustc_attr!(
         rustc_inherit_overflow_checks, Normal, template!(Word), WarnFollowing, @only_local: true,
@@ -826,27 +835,31 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
     ),
     rustc_attr!(
         rustc_test_marker, Normal, template!(NameValueStr: "name"), WarnFollowing,
-        "the `#[rustc_test_marker]` attribute is used internally to track tests",
+        @only_local: true, "the `#[rustc_test_marker]` attribute is used internally to track tests",
     ),
     rustc_attr!(
-        rustc_unsafe_specialization_marker, Normal, template!(Word), WarnFollowing,
+        rustc_unsafe_specialization_marker, Normal, template!(Word),
+        WarnFollowing, @only_local: true,
         "the `#[rustc_unsafe_specialization_marker]` attribute is used to check specializations"
     ),
     rustc_attr!(
-        rustc_specialization_trait, Normal, template!(Word), WarnFollowing,
+        rustc_specialization_trait, Normal, template!(Word),
+        WarnFollowing, @only_local: true,
         "the `#[rustc_specialization_trait]` attribute is used to check specializations"
     ),
     rustc_attr!(
-        rustc_main, Normal, template!(Word), WarnFollowing,
+        rustc_main, Normal, template!(Word), WarnFollowing, @only_local: true,
         "the `#[rustc_main]` attribute is used internally to specify test entry point function",
     ),
     rustc_attr!(
-        rustc_skip_array_during_method_dispatch, Normal, template!(Word), WarnFollowing,
+        rustc_skip_array_during_method_dispatch, Normal, template!(Word),
+        WarnFollowing, @only_local: true,
         "the `#[rustc_skip_array_during_method_dispatch]` attribute is used to exclude a trait \
         from method dispatch when the receiver is an array, for compatibility in editions < 2021."
     ),
     rustc_attr!(
-        rustc_must_implement_one_of, Normal, template!(List: "function1, function2, ..."), ErrorFollowing,
+        rustc_must_implement_one_of, Normal, template!(List: "function1, function2, ..."),
+        ErrorFollowing, @only_local: true,
         "the `#[rustc_must_implement_one_of]` attribute is used to change minimal complete \
         definition of a trait, it's currently in experimental form and should be changed before \
         being exposed outside of the std"
@@ -857,6 +870,7 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
     ),
     rustc_attr!(
         rustc_safe_intrinsic, Normal, template!(Word), WarnFollowing,
+        @only_local: true,
         "the `#[rustc_safe_intrinsic]` attribute is used internally to mark intrinsics as safe"
     ),
     rustc_attr!(
@@ -877,60 +891,103 @@ pub const BUILTIN_ATTRIBUTES: &[BuiltinAttribute] = &[
     // ==========================================================================
 
     rustc_attr!(TEST, rustc_effective_visibility, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_outlives, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_capture_analysis, Normal, template!(Word), WarnFollowing),
+    rustc_attr!(
+        TEST, rustc_outlives, Normal, template!(Word),
+        WarnFollowing, @only_local: true
+    ),
+    rustc_attr!(
+        TEST, rustc_capture_analysis, Normal, template!(Word),
+        WarnFollowing, @only_local: true
+    ),
     rustc_attr!(TEST, rustc_insignificant_dtor, Normal, template!(Word), WarnFollowing),
     rustc_attr!(TEST, rustc_strict_coherence, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_variance, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_variance_of_opaques, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_hidden_type_of_opaques, Normal, template!(Word), WarnFollowing),
+    rustc_attr!(TEST, rustc_variance, Normal, template!(Word), WarnFollowing, @only_local: true),
+    rustc_attr!(
+        TEST, rustc_variance_of_opaques, Normal, template!(Word),
+        WarnFollowing, @only_local: true
+    ),
+    rustc_attr!(
+        TEST, rustc_hidden_type_of_opaques, Normal, template!(Word),
+        WarnFollowing, @only_local: true),
     rustc_attr!(TEST, rustc_layout, Normal, template!(List: "field1, field2, ..."), WarnFollowing),
-    rustc_attr!(TEST, rustc_abi, Normal, template!(List: "field1, field2, ..."), WarnFollowing),
-    rustc_attr!(TEST, rustc_regions, Normal, template!(Word), WarnFollowing),
+    rustc_attr!(
+        TEST, rustc_abi, Normal, template!(List: "field1, field2, ..."),
+        WarnFollowing, @only_local: true
+    ),
+    rustc_attr!(
+        TEST, rustc_regions, Normal, template!(Word),
+        WarnFollowing, @only_local: true
+    ),
     rustc_attr!(
         TEST, rustc_error, Normal,
         template!(Word, List: "delayed_bug_from_inside_query"), WarnFollowingWordOnly
     ),
-    rustc_attr!(TEST, rustc_dump_user_args, Normal, template!(Word), WarnFollowing),
+    rustc_attr!(
+        TEST, rustc_dump_user_args, Normal, template!(Word), WarnFollowing,
+        @only_local: true
+    ),
     rustc_attr!(TEST, rustc_evaluate_where_clauses, Normal, template!(Word), WarnFollowing),
     rustc_attr!(
-        TEST, rustc_if_this_changed, Normal, template!(Word, List: "DepNode"), DuplicatesOk
+        TEST, rustc_if_this_changed, Normal, template!(Word, List: "DepNode"),
+        DuplicatesOk, @only_local: true
     ),
     rustc_attr!(
-        TEST, rustc_then_this_would_need, Normal, template!(List: "DepNode"), DuplicatesOk
+        TEST, rustc_then_this_would_need, Normal, template!(List: "DepNode"),
+        DuplicatesOk, @only_local: true
     ),
     rustc_attr!(
         TEST, rustc_clean, Normal,
         template!(List: r#"cfg = "...", /*opt*/ label = "...", /*opt*/ except = "...""#),
-        DuplicatesOk,
+        DuplicatesOk, @only_local: true
     ),
     rustc_attr!(
         TEST, rustc_partition_reused, Normal,
-        template!(List: r#"cfg = "...", module = "...""#), DuplicatesOk,
+        template!(List: r#"cfg = "...", module = "...""#), DuplicatesOk, @only_local: true
     ),
     rustc_attr!(
         TEST, rustc_partition_codegened, Normal,
-        template!(List: r#"cfg = "...", module = "...""#), DuplicatesOk,
+        template!(List: r#"cfg = "...", module = "...""#), DuplicatesOk, @only_local: true
     ),
     rustc_attr!(
         TEST, rustc_expected_cgu_reuse, Normal,
         template!(List: r#"cfg = "...", module = "...", kind = "...""#), DuplicatesOk,
+        @only_local: true
     ),
-    rustc_attr!(TEST, rustc_symbol_name, Normal, template!(Word), WarnFollowing),
+    rustc_attr!(
+        TEST, rustc_symbol_name, Normal, template!(Word), WarnFollowing,
+        @only_local: true
+    ),
     rustc_attr!(TEST, rustc_polymorphize_error, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_def_path, Normal, template!(Word), WarnFollowing),
+    rustc_attr!(
+        TEST, rustc_def_path, Normal, template!(Word), WarnFollowing,
+        @only_local: true
+    ),
     rustc_attr!(TEST, rustc_mir, Normal, template!(List: "arg1, arg2, ..."), DuplicatesOk),
     gated!(
         custom_mir, Normal, template!(List: r#"dialect = "...", phase = "...""#),
-        ErrorFollowing, "the `#[custom_mir]` attribute is just used for the Rust test suite",
+        ErrorFollowing, @only_local: true,
+        "the `#[custom_mir]` attribute is just used for the Rust test suite",
     ),
-    rustc_attr!(TEST, rustc_dump_program_clauses, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_dump_env_program_clauses, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_object_lifetime_default, Normal, template!(Word), WarnFollowing),
+    rustc_attr!(
+        TEST, rustc_dump_program_clauses, Normal, template!(Word), WarnFollowing,
+        @only_local: true
+    ),
+    rustc_attr!(
+        TEST, rustc_dump_env_program_clauses, Normal, template!(Word), WarnFollowing,
+        @only_local: true
+    ),
+    rustc_attr!(
+        TEST, rustc_object_lifetime_default, Normal, template!(Word), WarnFollowing,
+        @only_local: true
+    ),
     rustc_attr!(TEST, rustc_dump_vtable, Normal, template!(Word), WarnFollowing),
-    rustc_attr!(TEST, rustc_dummy, Normal, template!(Word /* doesn't matter*/), DuplicatesOk),
+    rustc_attr!(
+        TEST, rustc_dummy, Normal, template!(Word /* doesn't matter*/), DuplicatesOk,
+        @only_local: true
+    ),
     gated!(
         omit_gdb_pretty_printer_section, Normal, template!(Word), WarnFollowing,
+        @only_local: true,
         "the `#[omit_gdb_pretty_printer_section]` attribute is just used for the Rust test suite",
     ),
     rustc_attr!(

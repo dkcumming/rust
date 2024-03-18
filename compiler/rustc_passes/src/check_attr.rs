@@ -9,7 +9,7 @@ use rustc_ast::{ast, AttrKind, AttrStyle, Attribute, LitKind};
 use rustc_ast::{MetaItemKind, MetaItemLit, NestedMetaItem};
 use rustc_data_structures::fx::FxHashMap;
 use rustc_errors::StashKey;
-use rustc_errors::{Applicability, DiagCtxt, IntoDiagnosticArg, MultiSpan};
+use rustc_errors::{Applicability, DiagCtxt, IntoDiagArg, MultiSpan};
 use rustc_feature::{AttributeDuplicates, AttributeType, BuiltinAttribute, BUILTIN_ATTRIBUTE_MAP};
 use rustc_hir as hir;
 use rustc_hir::def_id::LocalModDefId;
@@ -79,14 +79,14 @@ pub(crate) enum ProcMacroKind {
     Attribute,
 }
 
-impl IntoDiagnosticArg for ProcMacroKind {
-    fn into_diagnostic_arg(self) -> rustc_errors::DiagArgValue {
+impl IntoDiagArg for ProcMacroKind {
+    fn into_diag_arg(self) -> rustc_errors::DiagArgValue {
         match self {
             ProcMacroKind::Attribute => "attribute proc macro",
             ProcMacroKind::Derive => "derive proc macro",
             ProcMacroKind::FunctionLike => "function-like proc macro",
         }
-        .into_diagnostic_arg()
+        .into_diag_arg()
     }
 }
 
@@ -1074,6 +1074,7 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
     /// of one item. Read the documentation of [`check_doc_inline`] for more information.
     ///
     /// [`check_doc_inline`]: Self::check_doc_inline
+    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
     fn check_doc_attrs(
         &self,
         attr: &Attribute,
@@ -1756,6 +1757,7 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
     }
 
     /// Checks if the `#[repr]` attributes on `item` are valid.
+    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
     fn check_repr(
         &self,
         attrs: &[Attribute],
@@ -2328,6 +2330,7 @@ impl<'tcx> CheckAttrVisitor<'tcx> {
 
             let hir_sig = tcx.hir().fn_sig_by_hir_id(hir_id);
             if let Some(hir_sig) = hir_sig {
+                #[allow(rustc::diagnostic_outside_of_impl)] // FIXME
                 match terr {
                     TypeError::ArgumentMutability(idx) | TypeError::ArgumentSorts(_, idx) => {
                         if let Some(ty) = hir_sig.decl.inputs.get(idx) {
@@ -2441,7 +2444,7 @@ impl<'tcx> Visitor<'tcx> for CheckAttrVisitor<'tcx> {
 
     fn visit_stmt(&mut self, stmt: &'tcx hir::Stmt<'tcx>) {
         // When checking statements ignore expressions, they will be checked later.
-        if let hir::StmtKind::Local(l) = stmt.kind {
+        if let hir::StmtKind::Let(l) = stmt.kind {
             self.check_attributes(l.hir_id, stmt.span, Target::Statement, None);
         }
         intravisit::walk_stmt(self, stmt)

@@ -101,7 +101,7 @@ use hir_def::{
 use hir_expand::{attrs::AttrId, name::AsName, HirFileId, HirFileIdExt, MacroCallId};
 use rustc_hash::FxHashMap;
 use smallvec::SmallVec;
-use stdx::{impl_from, never};
+use stdx::impl_from;
 use syntax::{
     ast::{self, HasName},
     AstNode, SyntaxNode,
@@ -118,7 +118,7 @@ pub(super) struct SourceToDefCtx<'a, 'b> {
 
 impl SourceToDefCtx<'_, '_> {
     pub(super) fn file_to_def(&self, file: FileId) -> SmallVec<[ModuleId; 1]> {
-        let _p = tracing::span!(tracing::Level::INFO, "SourceBinder::to_module_def");
+        let _p = tracing::span!(tracing::Level::INFO, "SourceBinder::file_to_module_def");
         let mut mods = SmallVec::new();
         for &crate_id in self.db.relevant_crates(file).iter() {
             // FIXME: inner items
@@ -253,14 +253,8 @@ impl SourceToDefCtx<'_, '_> {
         src: InFile<ast::SelfParam>,
     ) -> Option<(DefWithBodyId, BindingId)> {
         let container = self.find_pat_or_label_container(src.syntax())?;
-        let (body, source_map) = self.db.body_with_source_map(container);
-        let pat_id = source_map.node_self_param(src.as_ref())?;
-        if let crate::Pat::Bind { id, .. } = body[pat_id] {
-            Some((container, id))
-        } else {
-            never!();
-            None
-        }
+        let body = self.db.body(container);
+        Some((container, body.self_param?))
     }
     pub(super) fn label_to_def(
         &mut self,

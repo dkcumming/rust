@@ -30,6 +30,7 @@ declare_lint_pass! {
         CENUM_IMPL_DROP_CAST,
         COHERENCE_LEAK_CHECK,
         CONFLICTING_REPR_HINTS,
+        CONST_EVAL_MUTABLE_PTR_IN_FINAL_VALUE,
         CONST_EVALUATABLE_UNCHECKED,
         CONST_ITEM_MUTATION,
         DEAD_CODE,
@@ -67,6 +68,7 @@ declare_lint_pass! {
         MISSING_FRAGMENT_SPECIFIER,
         MUST_NOT_SUSPEND,
         NAMED_ARGUMENTS_USED_POSITIONALLY,
+        NON_CONTIGUOUS_RANGE_ENDPOINTS,
         NON_EXHAUSTIVE_OMITTED_PATTERNS,
         ORDER_DEPENDENT_TRAIT_OBJECTS,
         OVERLAPPING_RANGE_ENDPOINTS,
@@ -77,7 +79,8 @@ declare_lint_pass! {
         PROC_MACRO_BACK_COMPAT,
         PROC_MACRO_DERIVE_RESOLUTION_FALLBACK,
         PUB_USE_OF_PRIVATE_EXTERN_CRATE,
-        REFINING_IMPL_TRAIT,
+        REFINING_IMPL_TRAIT_INTERNAL,
+        REFINING_IMPL_TRAIT_REACHABLE,
         RENAMED_AND_REMOVED_LINTS,
         REPR_TRANSPARENT_EXTERNAL_PRIVATE_FIELDS,
         RUST_2021_INCOMPATIBLE_CLOSURE_CAPTURES,
@@ -128,6 +131,7 @@ declare_lint_pass! {
         UNUSED_VARIABLES,
         USELESS_DEPRECATED,
         WARNINGS,
+        WASM_C_ABI,
         WHERE_CLAUSES_OBJECT_SAFETY,
         WRITES_THROUGH_IMMUTABLE_POINTER,
         // tidy-alphabetical-end
@@ -555,6 +559,7 @@ declare_lint! {
     /// fn main() {
     ///     use foo::bar;
     ///     foo::bar();
+    ///     bar();
     /// }
     /// ```
     ///
@@ -702,6 +707,20 @@ declare_lint! {
     /// `PhantomData`.
     ///
     /// Otherwise consider removing the unused code.
+    ///
+    /// ### Limitations
+    ///
+    /// Removing fields that are only used for side-effects and never
+    /// read will result in behavioral changes. Examples of this
+    /// include:
+    ///
+    /// - If a field's value performs an action when it is dropped.
+    /// - If a field's type does not implement an auto trait
+    ///   (e.g. `Send`, `Sync`, `Unpin`).
+    ///
+    /// For side-effects from dropping field values, this lint should
+    /// be allowed on those fields. For side-effects from containing
+    /// field types, `PhantomData` should be used.
     pub DEAD_CODE,
     Warn,
     "detect unused, unexported items"
@@ -810,6 +829,36 @@ declare_lint! {
     pub OVERLAPPING_RANGE_ENDPOINTS,
     Warn,
     "detects range patterns with overlapping endpoints"
+}
+
+declare_lint! {
+    /// The `non_contiguous_range_endpoints` lint detects likely off-by-one errors when using
+    /// exclusive [range patterns].
+    ///
+    /// [range patterns]: https://doc.rust-lang.org/nightly/reference/patterns.html#range-patterns
+    ///
+    /// ### Example
+    ///
+    /// ```rust
+    /// # #![feature(exclusive_range_pattern)]
+    /// let x = 123u32;
+    /// match x {
+    ///     0..100 => { println!("small"); }
+    ///     101..1000 => { println!("large"); }
+    ///     _ => { println!("larger"); }
+    /// }
+    /// ```
+    ///
+    /// {{produces}}
+    ///
+    /// ### Explanation
+    ///
+    /// It is likely a mistake to have range patterns in a match expression that miss out a single
+    /// number. Check that the beginning and end values are what you expect, and keep in mind that
+    /// with `..=` the right bound is inclusive, and with `..` it is exclusive.
+    pub NON_CONTIGUOUS_RANGE_ENDPOINTS,
+    Warn,
+    "detects off-by-one errors with exclusive range patterns"
 }
 
 declare_lint! {
@@ -2766,6 +2815,51 @@ declare_lint! {
 }
 
 declare_lint! {
+    /// The `const_eval_mutable_ptr_in_final_value` lint detects if a mutable pointer
+    /// has leaked into the final value of a const expression.
+    ///
+    /// ### Example
+    ///
+    /// ```rust
+    /// pub enum JsValue {
+    ///     Undefined,
+    ///     Object(std::cell::Cell<bool>),
+    /// }
+    ///
+    /// impl ::std::ops::Drop for JsValue {
+    ///     fn drop(&mut self) {}
+    /// }
+    ///
+    /// const UNDEFINED: &JsValue = &JsValue::Undefined;
+    ///
+    /// fn main() {
+    /// }
+    /// ```
+    ///
+    /// {{produces}}
+    ///
+    /// ### Explanation
+    ///
+    /// In the 1.77 release, the const evaluation machinery adopted some
+    /// stricter rules to reject expressions with values that could
+    /// end up holding mutable references to state stored in static memory
+    /// (which is inherently immutable).
+    ///
+    /// This is a [future-incompatible] lint to ease the transition to an error.
+    /// See [issue #122153] for more details.
+    ///
+    /// [issue #122153]: https://github.com/rust-lang/rust/issues/122153
+    /// [future-incompatible]: ../index.md#future-incompatible-lints
+    pub CONST_EVAL_MUTABLE_PTR_IN_FINAL_VALUE,
+    Warn,
+    "detects a mutable pointer that has leaked into final value of a const expression",
+    @future_incompatible = FutureIncompatibleInfo {
+        reason: FutureIncompatibilityReason::FutureReleaseErrorReportInDeps,
+        reference: "issue #122153 <https://github.com/rust-lang/rust/issues/122153>",
+    };
+}
+
+declare_lint! {
     /// The `const_evaluatable_unchecked` lint detects a generic constant used
     /// in a type.
     ///
@@ -4264,7 +4358,6 @@ declare_lint! {
     pub UNKNOWN_OR_MALFORMED_DIAGNOSTIC_ATTRIBUTES,
     Warn,
     "unrecognized or malformed diagnostic attribute",
-    @feature_gate = sym::diagnostic_namespace;
 }
 
 declare_lint! {
@@ -4310,8 +4403,10 @@ declare_lint! {
 }
 
 declare_lint! {
-    /// The `refining_impl_trait` lint detects usages of return-position impl
-    /// traits in trait signatures which are refined by implementations.
+    /// The `refining_impl_trait_reachable` lint detects `impl Trait` return
+    /// types in method signatures that are refined by a publically reachable
+    /// trait implementation, meaning the implementation adds information about
+    /// the return type that is not present in the trait.
     ///
     /// ### Example
     ///
@@ -4333,7 +4428,7 @@ declare_lint! {
     /// fn main() {
     ///     // users can observe that the return type of
     ///     // `<&str as AsDisplay>::as_display()` is `&str`.
-    ///     let x: &str = "".as_display();
+    ///     let _x: &str = "".as_display();
     /// }
     /// ```
     ///
@@ -4341,13 +4436,80 @@ declare_lint! {
     ///
     /// ### Explanation
     ///
-    /// Return-position impl trait in traits (RPITITs) desugar to associated types,
-    /// and callers of methods for types where the implementation is known are
+    /// Callers of methods for types where the implementation is known are
     /// able to observe the types written in the impl signature. This may be
-    /// intended behavior, but may also pose a semver hazard for authors of libraries
-    /// who do not wish to make stronger guarantees about the types than what is
-    /// written in the trait signature.
-    pub REFINING_IMPL_TRAIT,
+    /// intended behavior, but may also lead to implementation details being
+    /// revealed unintentionally. In particular, it may pose a semver hazard
+    /// for authors of libraries who do not wish to make stronger guarantees
+    /// about the types than what is written in the trait signature.
+    ///
+    /// `refining_impl_trait` is a lint group composed of two lints:
+    ///
+    /// * `refining_impl_trait_reachable`, for refinements that are publically
+    ///   reachable outside a crate, and
+    /// * `refining_impl_trait_internal`, for refinements that are only visible
+    ///    within a crate.
+    ///
+    /// We are seeking feedback on each of these lints; see issue
+    /// [#121718](https://github.com/rust-lang/rust/issues/121718) for more
+    /// information.
+    pub REFINING_IMPL_TRAIT_REACHABLE,
+    Warn,
+    "impl trait in impl method signature does not match trait method signature",
+}
+
+declare_lint! {
+    /// The `refining_impl_trait_internal` lint detects `impl Trait` return
+    /// types in method signatures that are refined by a trait implementation,
+    /// meaning the implementation adds information about the return type that
+    /// is not present in the trait.
+    ///
+    /// ### Example
+    ///
+    /// ```rust,compile_fail
+    /// #![deny(refining_impl_trait)]
+    ///
+    /// use std::fmt::Display;
+    ///
+    /// trait AsDisplay {
+    ///     fn as_display(&self) -> impl Display;
+    /// }
+    ///
+    /// impl<'s> AsDisplay for &'s str {
+    ///     fn as_display(&self) -> Self {
+    ///         *self
+    ///     }
+    /// }
+    ///
+    /// fn main() {
+    ///     // users can observe that the return type of
+    ///     // `<&str as AsDisplay>::as_display()` is `&str`.
+    ///     let _x: &str = "".as_display();
+    /// }
+    /// ```
+    ///
+    /// {{produces}}
+    ///
+    /// ### Explanation
+    ///
+    /// Callers of methods for types where the implementation is known are
+    /// able to observe the types written in the impl signature. This may be
+    /// intended behavior, but may also lead to implementation details being
+    /// revealed unintentionally. In particular, it may pose a semver hazard
+    /// for authors of libraries who do not wish to make stronger guarantees
+    /// about the types than what is written in the trait signature.
+    ///
+    /// `refining_impl_trait` is a lint group composed of two lints:
+    ///
+    /// * `refining_impl_trait_reachable`, for refinements that are publically
+    ///   reachable outside a crate, and
+    /// * `refining_impl_trait_internal`, for refinements that are only visible
+    ///    within a crate.
+    ///
+    /// We are seeking feedback on each of these lints; see issue
+    /// [#121718](https://github.com/rust-lang/rust/issues/121718) for more
+    /// information.
+    pub REFINING_IMPL_TRAIT_INTERNAL,
     Warn,
     "impl trait in impl method signature does not match trait method signature",
 }
@@ -4472,4 +4634,42 @@ declare_lint! {
         reason: FutureIncompatibilityReason::FutureReleaseErrorDontReportInDeps,
         reference: "issue #120192 <https://github.com/rust-lang/rust/issues/120192>",
     };
+}
+
+declare_lint! {
+    /// The `wasm_c_abi` lint detects crate dependencies that are incompatible
+    /// with future versions of Rust that will emit spec-compliant C ABI.
+    ///
+    /// ### Example
+    ///
+    /// ```rust,ignore (needs extern crate)
+    /// #![deny(wasm_c_abi)]
+    /// ```
+    ///
+    /// This will produce:
+    ///
+    /// ```text
+    /// error: the following packages contain code that will be rejected by a future version of Rust: wasm-bindgen v0.2.87
+    ///   |
+    /// note: the lint level is defined here
+    ///  --> src/lib.rs:1:9
+    ///   |
+    /// 1 | #![deny(wasm_c_abi)]
+    ///   |         ^^^^^^^^^^
+    /// ```
+    ///
+    /// ### Explanation
+    ///
+    /// Rust has historically emitted non-spec-compliant C ABI. This has caused
+    /// incompatibilities between other compilers and Wasm targets. In a future
+    /// version of Rust this will be fixed and therefore dependencies relying
+    /// on the non-spec-compliant C ABI will stop functioning.
+    pub WASM_C_ABI,
+    Warn,
+    "detects dependencies that are incompatible with the Wasm C ABI",
+    @future_incompatible = FutureIncompatibleInfo {
+        reason: FutureIncompatibilityReason::FutureReleaseErrorReportInDeps,
+        reference: "issue #71871 <https://github.com/rust-lang/rust/issues/71871>",
+    };
+    crate_level_only
 }

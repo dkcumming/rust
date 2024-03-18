@@ -1021,7 +1021,7 @@ impl Stmt {
 #[derive(Clone, Encodable, Decodable, Debug)]
 pub enum StmtKind {
     /// A local (let) binding.
-    Local(P<Local>),
+    Let(P<Local>),
     /// An item definition.
     Item(P<Item>),
     /// Expr without trailing semi-colon.
@@ -2302,6 +2302,9 @@ pub enum InlineAsmOperand {
     Sym {
         sym: InlineAsmSym,
     },
+    Label {
+        block: P<Block>,
+    },
 }
 
 impl InlineAsmOperand {
@@ -2311,7 +2314,7 @@ impl InlineAsmOperand {
             | Self::Out { reg, .. }
             | Self::InOut { reg, .. }
             | Self::SplitInOut { reg, .. } => Some(reg),
-            Self::Const { .. } | Self::Sym { .. } => None,
+            Self::Const { .. } | Self::Sym { .. } | Self::Label { .. } => None,
         }
     }
 }

@@ -254,7 +254,7 @@ impl<'a> Parser<'a> {
                 let local = this.parse_local(attrs)?;
                 // FIXME - maybe capture semicolon in recovery?
                 Ok((
-                    this.mk_stmt(lo.to(this.prev_token.span), StmtKind::Local(local)),
+                    this.mk_stmt(lo.to(this.prev_token.span), StmtKind::Let(local)),
                     TrailingToken::None,
                 ))
             })?;
@@ -278,7 +278,7 @@ impl<'a> Parser<'a> {
             } else {
                 TrailingToken::None
             };
-            Ok((this.mk_stmt(lo.to(this.prev_token.span), StmtKind::Local(local)), trailing))
+            Ok((this.mk_stmt(lo.to(this.prev_token.span), StmtKind::Let(local)), trailing))
         })
     }
 
@@ -448,7 +448,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Parses a block. No inner attributes are allowed.
-    pub(super) fn parse_block(&mut self) -> PResult<'a, P<Block>> {
+    pub fn parse_block(&mut self) -> PResult<'a, P<Block>> {
         let (attrs, block) = self.parse_inner_attrs_and_block()?;
         if let [.., last] = &*attrs {
             self.error_on_forbidden_inner_attr(
@@ -764,7 +764,7 @@ impl<'a> Parser<'a> {
                 }
             }
             StmtKind::Expr(_) | StmtKind::MacCall(_) => {}
-            StmtKind::Local(local) if let Err(mut e) = self.expect_semi() => {
+            StmtKind::Let(local) if let Err(mut e) = self.expect_semi() => {
                 // We might be at the `,` in `let x = foo<bar, baz>;`. Try to recover.
                 match &mut local.kind {
                     LocalKind::Init(expr) | LocalKind::InitElse(expr, _) => {
@@ -787,13 +787,17 @@ impl<'a> Parser<'a> {
                             let suggest_eq = if self.token.kind == token::Dot
                                 && let _ = self.bump()
                                 && let mut snapshot = self.create_snapshot_for_diagnostic()
-                                && let Ok(_) = snapshot.parse_dot_suffix_expr(
-                                    colon_sp,
-                                    self.mk_expr_err(
+                                && let Ok(_) = snapshot
+                                    .parse_dot_suffix_expr(
                                         colon_sp,
-                                        self.dcx().delayed_bug("error during `:` -> `=` recovery"),
-                                    ),
-                                ) {
+                                        self.mk_expr_err(
+                                            colon_sp,
+                                            self.dcx()
+                                                .delayed_bug("error during `:` -> `=` recovery"),
+                                        ),
+                                    )
+                                    .map_err(Diag::cancel)
+                            {
                                 true
                             } else if let Some(op) = self.check_assoc_op()
                                 && op.node.can_continue_expr_unambiguously()
@@ -816,7 +820,7 @@ impl<'a> Parser<'a> {
                 }
                 eat_semi = false;
             }
-            StmtKind::Empty | StmtKind::Item(_) | StmtKind::Local(_) | StmtKind::Semi(_) => {
+            StmtKind::Empty | StmtKind::Item(_) | StmtKind::Let(_) | StmtKind::Semi(_) => {
                 eat_semi = false
             }
         }

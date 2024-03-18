@@ -61,7 +61,7 @@ use crate::traits::{
 use rustc_data_structures::fx::{FxIndexMap, FxIndexSet};
 use rustc_errors::{
     codes::*, pluralize, struct_span_code_err, Applicability, Diag, DiagCtxt, DiagStyledString,
-    ErrorGuaranteed, IntoDiagnosticArg,
+    ErrorGuaranteed, IntoDiagArg,
 };
 use rustc_hir as hir;
 use rustc_hir::def::DefKind;
@@ -79,7 +79,7 @@ use rustc_middle::ty::{
 use rustc_span::{sym, symbol::kw, BytePos, DesugaringKind, Pos, Span};
 use rustc_target::spec::abi;
 use std::borrow::Cow;
-use std::ops::Deref;
+use std::ops::{ControlFlow, Deref};
 use std::path::PathBuf;
 use std::{cmp, fmt, iter};
 
@@ -2126,23 +2126,20 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
         let TypeError::FixedArraySize(sz) = terr else {
             return None;
         };
-        let tykind = match self.tcx.opt_hir_node_by_def_id(trace.cause.body_id) {
-            Some(hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, body_id), .. })) => {
+        let tykind = match self.tcx.hir_node_by_def_id(trace.cause.body_id) {
+            hir::Node::Item(hir::Item { kind: hir::ItemKind::Fn(_, _, body_id), .. }) => {
                 let body = hir.body(*body_id);
-                struct LetVisitor<'v> {
+                struct LetVisitor {
                     span: Span,
-                    result: Option<&'v hir::Ty<'v>>,
                 }
-                impl<'v> Visitor<'v> for LetVisitor<'v> {
-                    fn visit_stmt(&mut self, s: &'v hir::Stmt<'v>) {
-                        if self.result.is_some() {
-                            return;
-                        }
+                impl<'v> Visitor<'v> for LetVisitor {
+                    type Result = ControlFlow<&'v hir::TyKind<'v>>;
+                    fn visit_stmt(&mut self, s: &'v hir::Stmt<'v>) -> Self::Result {
                         // Find a local statement where the initializer has
                         // the same span as the error and the type is specified.
                         if let hir::Stmt {
                             kind:
-                                hir::StmtKind::Local(hir::Local {
+                                hir::StmtKind::Let(hir::Local {
                                     init: Some(hir::Expr { span: init_span, .. }),
                                     ty: Some(array_ty),
                                     ..
@@ -2151,15 +2148,15 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                         } = s
                             && init_span == &self.span
                         {
-                            self.result = Some(*array_ty);
+                            ControlFlow::Break(&array_ty.peel_refs().kind)
+                        } else {
+                            ControlFlow::Continue(())
                         }
                     }
                 }
-                let mut visitor = LetVisitor { span, result: None };
-                visitor.visit_body(body);
-                visitor.result.map(|r| &r.peel_refs().kind)
+                LetVisitor { span }.visit_body(body).break_value()
             }
-            Some(hir::Node::Item(hir::Item { kind: hir::ItemKind::Const(ty, _, _), .. })) => {
+            hir::Node::Item(hir::Item { kind: hir::ItemKind::Const(ty, _, _), .. }) => {
                 Some(&ty.peel_refs().kind)
             }
             _ => None,
@@ -2530,15 +2527,14 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
                     .filter(|p| matches!(p.kind, ty::GenericParamDefKind::Lifetime))
                     .map(|p| p.name)
                     .collect::<Vec<_>>();
-            if let Some(hir_id) = self.tcx.opt_local_def_id_to_hir_id(lifetime_scope) {
-                // consider late-bound lifetimes ...
-                used_names.extend(self.tcx.late_bound_vars(hir_id).into_iter().filter_map(|p| {
-                    match p {
-                        ty::BoundVariableKind::Region(lt) => lt.get_name(),
-                        _ => None,
-                    }
-                }))
-            }
+            let hir_id = self.tcx.local_def_id_to_hir_id(lifetime_scope);
+            // consider late-bound lifetimes ...
+            used_names.extend(self.tcx.late_bound_vars(hir_id).into_iter().filter_map(
+                |p| match p {
+                    ty::BoundVariableKind::Region(lt) => lt.get_name(),
+                    _ => None,
+                },
+            ));
             (b'a'..=b'z')
                 .map(|c| format!("'{}", c as char))
                 .find(|candidate| !used_names.iter().any(|e| e.as_str() == candidate))
@@ -2557,6 +2553,7 @@ impl<'tcx> TypeErrCtxt<'_, 'tcx> {
             hir::OwnerNode::ImplItem(i) => visitor.visit_impl_item(i),
             hir::OwnerNode::TraitItem(i) => visitor.visit_trait_item(i),
             hir::OwnerNode::Crate(_) => bug!("OwnerNode::Crate doesn't not have generics"),
+            hir::OwnerNode::AssocOpaqueTy(..) => unreachable!(),
         }
 
         let ast_generics = self.tcx.hir().get_generics(lifetime_scope).unwrap();
@@ -2898,11 +2895,11 @@ impl<'tcx> ObligationCause<'tcx> {
     }
 }
 
-/// Newtype to allow implementing IntoDiagnosticArg
+/// Newtype to allow implementing IntoDiagArg
 pub struct ObligationCauseAsDiagArg<'tcx>(pub ObligationCause<'tcx>);
 
-impl IntoDiagnosticArg for ObligationCauseAsDiagArg<'_> {
-    fn into_diagnostic_arg(self) -> rustc_errors::DiagArgValue {
+impl IntoDiagArg for ObligationCauseAsDiagArg<'_> {
+    fn into_diag_arg(self) -> rustc_errors::DiagArgValue {
         use crate::traits::ObligationCauseCode::*;
         let kind = match self.0.code() {
             CompareImplItemObligation { kind: ty::AssocKind::Fn, .. } => "method_compat",

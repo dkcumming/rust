@@ -1,7 +1,7 @@
 use rustc_ast as ast;
 use rustc_ast::visit::{self, AssocCtxt, FnCtxt, FnKind, Visitor};
 use rustc_ast::{attr, AssocConstraint, AssocConstraintKind, NodeId};
-use rustc_ast::{PatKind, RangeEnd};
+use rustc_ast::{token, PatKind, RangeEnd};
 use rustc_feature::{AttributeGate, BuiltinAttribute, Features, GateIssue, BUILTIN_ATTRIBUTE_MAP};
 use rustc_session::parse::{feature_err, feature_err_issue, feature_warn};
 use rustc_session::Session;
@@ -17,6 +17,7 @@ use crate::errors;
 macro_rules! gate {
     ($visitor:expr, $feature:ident, $span:expr, $explain:expr) => {{
         if !$visitor.features.$feature && !$span.allows_unstable(sym::$feature) {
+            #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
             feature_err(&$visitor.sess, sym::$feature, $span, $explain).emit();
         }
     }};
@@ -34,6 +35,7 @@ macro_rules! gate {
 macro_rules! gate_alt {
     ($visitor:expr, $has_feature:expr, $name:expr, $span:expr, $explain:expr) => {{
         if !$has_feature && !$span.allows_unstable($name) {
+            #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
             feature_err(&$visitor.sess, $name, $span, $explain).emit();
         }
     }};
@@ -73,6 +75,7 @@ struct PostExpansionVisitor<'a> {
 }
 
 impl<'a> PostExpansionVisitor<'a> {
+    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
     fn check_abi(&self, abi: ast::StrLit, constness: ast::Const) {
         let ast::StrLit { symbol_unescaped, span, .. } = abi;
 
@@ -202,14 +205,6 @@ impl<'a> Visitor<'a> for PostExpansionVisitor<'a> {
                     }
                 );
             }
-        }
-        if !attr.is_doc_comment()
-            && let [seg, _] = attr.get_normal_item().path.segments.as_slice()
-            && seg.ident.name == sym::diagnostic
-            && !self.features.diagnostic_namespace
-        {
-            let msg = "`#[diagnostic]` attribute name space is experimental";
-            gate!(self, diagnostic_namespace, seg.ident.span, msg);
         }
 
         // Emit errors for non-staged-api crates.
@@ -382,6 +377,17 @@ impl<'a> Visitor<'a> for PostExpansionVisitor<'a> {
         match e.kind {
             ast::ExprKind::TryBlock(_) => {
                 gate!(&self, try_blocks, e.span, "`try` expression is experimental");
+            }
+            ast::ExprKind::Lit(token::Lit { kind: token::LitKind::Float, suffix, .. }) => {
+                match suffix {
+                    Some(sym::f16) => {
+                        gate!(&self, f16, e.span, "the type `f16` is unstable")
+                    }
+                    Some(sym::f128) => {
+                        gate!(&self, f128, e.span, "the type `f128` is unstable")
+                    }
+                    _ => (),
+                }
             }
             _ => {}
         }
@@ -579,6 +585,7 @@ pub fn check_crate(krate: &ast::Crate, sess: &Session, features: &Features) {
                 if let Ok(snippet) = sm.span_to_snippet(span)
                     && snippet == "!"
                 {
+                    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
                     feature_err(sess, sym::never_patterns, span, "`!` patterns are experimental")
                         .emit();
                 } else {

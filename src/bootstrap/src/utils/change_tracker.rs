@@ -60,6 +60,20 @@ pub fn find_recent_config_change_ids(current_id: usize) -> Vec<ChangeInfo> {
         .collect()
 }
 
+pub fn human_readable_changes(changes: &[ChangeInfo]) -> String {
+    let mut message = String::new();
+
+    for change in changes {
+        message.push_str(&format!("  [{}] {}\n", change.severity, change.summary));
+        message.push_str(&format!(
+            "    - PR Link https://github.com/rust-lang/rust/pull/{}\n",
+            change.change_id
+        ));
+    }
+
+    message
+}
+
 /// Keeps track of major changes made to the bootstrap configuration.
 ///
 /// If you make any major changes (such as adding new values or changing default values),
@@ -135,5 +149,25 @@ pub const CONFIG_CHANGE_HISTORY: &[ChangeInfo] = &[
         change_id: 118724,
         severity: ChangeSeverity::Info,
         summary: "`x install` now skips providing tarball sources (under 'build/dist' path) to speed up the installation process.",
+    },
+    ChangeInfo {
+        change_id: 121976,
+        severity: ChangeSeverity::Info,
+        summary: "A new `boostrap-cache-path` option has been introduced which can be utilized to modify the cache path for bootstrap.",
+    },
+    ChangeInfo {
+        change_id: 122108,
+        severity: ChangeSeverity::Info,
+        summary: "a new `target.*.runner` option is available to specify a wrapper executable required to run tests for a target",
+    },
+    ChangeInfo {
+        change_id: 117458,
+        severity: ChangeSeverity::Info,
+        summary: "New option `rust.llvm-bitcode-linker` that will build the llvm-bitcode-linker.",
+    },
+    ChangeInfo {
+        change_id: 121754,
+        severity: ChangeSeverity::Warning,
+        summary: "`rust.split-debuginfo` has been moved to `target.<triple>.split-debuginfo` and its default value is determined for each target individually.",
     },
 ];

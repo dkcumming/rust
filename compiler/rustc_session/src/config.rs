@@ -1,17 +1,19 @@
 //! Contains infrastructure for configuring the compiler, including parsing
 //! command-line options.
 
+#![allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
+
 pub use crate::options::*;
 
 use crate::errors::FileWriteFail;
 use crate::search_paths::SearchPath;
 use crate::utils::{CanonicalizedPath, NativeLib, NativeLibKind};
-use crate::{lint, HashStableContext};
+use crate::{filesearch, lint, HashStableContext};
 use crate::{EarlyDiagCtxt, Session};
 use rustc_data_structures::fx::{FxHashMap, FxHashSet, FxIndexMap, FxIndexSet};
 use rustc_data_structures::stable_hasher::{StableOrd, ToStableHashKey};
 use rustc_errors::emitter::HumanReadableErrorType;
-use rustc_errors::{ColorConfig, DiagArgValue, DiagCtxtFlags, IntoDiagnosticArg};
+use rustc_errors::{ColorConfig, DiagArgValue, DiagCtxtFlags, IntoDiagArg};
 use rustc_feature::UnstableFeatures;
 use rustc_span::edition::{Edition, DEFAULT_EDITION, EDITION_NAME_LIST, LATEST_STABLE_EDITION};
 use rustc_span::source_map::FilePathMapping;
@@ -132,31 +134,20 @@ pub enum LtoCli {
 /// and higher). Nevertheless, there are many variables, depending on options
 /// selected, code structure, and enabled attributes. If errors are encountered,
 /// either while compiling or when generating `llvm-cov show` reports, consider
-/// lowering the optimization level, including or excluding `-C link-dead-code`,
-/// or using `-Zunstable-options -C instrument-coverage=except-unused-functions`
-/// or `-Zunstable-options -C instrument-coverage=except-unused-generics`.
-///
-/// Note that `ExceptUnusedFunctions` means: When `mapgen.rs` generates the
-/// coverage map, it will not attempt to generate synthetic functions for unused
-/// (and not code-generated) functions (whether they are generic or not). As a
-/// result, non-codegenned functions will not be included in the coverage map,
-/// and will not appear, as covered or uncovered, in coverage reports.
-///
-/// `ExceptUnusedGenerics` will add synthetic functions to the coverage map,
-/// unless the function has type parameters.
+/// lowering the optimization level, or including/excluding `-C link-dead-code`.
 #[derive(Clone, Copy, PartialEq, Hash, Debug)]
 pub enum InstrumentCoverage {
-    /// Default `-C instrument-coverage` or `-C instrument-coverage=statement`
-    All,
-    /// Additionally, instrument branches and output branch coverage.
-    /// `-Zunstable-options -C instrument-coverage=branch`
-    Branch,
-    /// `-Zunstable-options -C instrument-coverage=except-unused-generics`
-    ExceptUnusedGenerics,
-    /// `-Zunstable-options -C instrument-coverage=except-unused-functions`
-    ExceptUnusedFunctions,
-    /// `-C instrument-coverage=off` (or `no`, etc.)
-    Off,
+    /// `-C instrument-coverage=no` (or `off`, `false` etc.)
+    No,
+    /// `-C instrument-coverage` or `-C instrument-coverage=yes`
+    Yes,
+}
+
+/// Individual flag values controlled by `-Z coverage-options`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+pub struct CoverageOptions {
+    /// Add branch coverage instrumentation.
+    pub branch: bool,
 }
 
 /// Settings for `-Z instrument-xray` flag.
@@ -1562,7 +1553,7 @@ pub fn build_configuration(sess: &Session, mut user_cfg: Cfg) -> Cfg {
     user_cfg
 }
 
-pub(super) fn build_target_config(
+pub fn build_target_config(
     early_dcx: &EarlyDiagCtxt,
     opts: &Options,
     target_override: Option<Target>,
@@ -2468,9 +2459,7 @@ pub fn parse_externs(
             ));
             let adjusted_name = name.replace('-', "_");
             if is_ascii_ident(&adjusted_name) {
-                // FIXME: make this translatable
-                #[allow(rustc::diagnostic_outside_of_impl)]
-                #[allow(rustc::untranslatable_diagnostic)]
+                #[allow(rustc::diagnostic_outside_of_impl)] // FIXME
                 error.help(format!(
                     "consider replacing the dashes with underscores: `{adjusted_name}`"
                 ));
@@ -2718,25 +2707,7 @@ pub fn build_session_options(early_dcx: &mut EarlyDiagCtxt, matches: &getopts::M
         }
     }
 
-    // Check for unstable values of `-C instrument-coverage`.
-    // This is what prevents them from being used on stable compilers.
-    match cg.instrument_coverage {
-        // Stable values:
-        InstrumentCoverage::All | InstrumentCoverage::Off => {}
-        // Unstable values:
-        InstrumentCoverage::Branch
-        | InstrumentCoverage::ExceptUnusedFunctions
-        | InstrumentCoverage::ExceptUnusedGenerics => {
-            if !unstable_opts.unstable_options {
-                early_dcx.early_fatal(
-                    "`-C instrument-coverage=branch` and `-C instrument-coverage=except-*` \
-                    require `-Z unstable-options`",
-                );
-            }
-        }
-    }
-
-    if cg.instrument_coverage != InstrumentCoverage::Off {
+    if cg.instrument_coverage != InstrumentCoverage::No {
         if cg.profile_generate.enabled() || cg.profile_use.is_some() {
             early_dcx.early_fatal(
                 "option `-C instrument-coverage` is not compatible with either `-C profile-use` \
@@ -2863,16 +2834,8 @@ pub fn build_session_options(early_dcx: &mut EarlyDiagCtxt, matches: &getopts::M
 
     let logical_env = parse_logical_env(early_dcx, matches);
 
-    // Try to find a directory containing the Rust `src`, for more details see
-    // the doc comment on the `real_rust_source_base_dir` field.
-    let tmp_buf;
-    let sysroot = match &sysroot_opt {
-        Some(s) => s,
-        None => {
-            tmp_buf = crate::filesearch::get_or_default_sysroot().expect("Failed finding sysroot");
-            &tmp_buf
-        }
-    };
+    let sysroot = filesearch::materialize_sysroot(sysroot_opt);
+
     let real_rust_source_base_dir = {
         // This is the location used by the `rust-src` `rustup` component.
         let mut candidate = sysroot.join("lib/rustlib/src/rust");
@@ -2916,7 +2879,7 @@ pub fn build_session_options(early_dcx: &mut EarlyDiagCtxt, matches: &getopts::M
         describe_lints,
         output_types,
         search_paths,
-        maybe_sysroot: sysroot_opt,
+        maybe_sysroot: Some(sysroot),
         target_triple,
         test,
         incremental,
@@ -3098,9 +3061,9 @@ impl fmt::Display for CrateType {
     }
 }
 
-impl IntoDiagnosticArg for CrateType {
-    fn into_diagnostic_arg(self) -> DiagArgValue {
-        self.to_string().into_diagnostic_arg()
+impl IntoDiagArg for CrateType {
+    fn into_diag_arg(self) -> DiagArgValue {
+        self.to_string().into_diag_arg()
     }
 }
 
@@ -3212,12 +3175,12 @@ pub enum WasiExecModel {
 /// how the hash should be calculated when adding a new command-line argument.
 pub(crate) mod dep_tracking {
     use super::{
-        BranchProtection, CFGuard, CFProtection, CollapseMacroDebuginfo, CrateType, DebugInfo,
-        DebugInfoCompression, ErrorOutputType, FunctionReturn, InliningThreshold,
-        InstrumentCoverage, InstrumentXRay, LinkerPluginLto, LocationDetail, LtoCli,
-        NextSolverConfig, OomStrategy, OptLevel, OutFileName, OutputType, OutputTypes, Polonius,
-        RemapPathScopeComponents, ResolveDocLinks, SourceFileHashAlgorithm, SplitDwarfKind,
-        SwitchWithOptPath, SymbolManglingVersion, WasiExecModel,
+        BranchProtection, CFGuard, CFProtection, CollapseMacroDebuginfo, CoverageOptions,
+        CrateType, DebugInfo, DebugInfoCompression, ErrorOutputType, FunctionReturn,
+        InliningThreshold, InstrumentCoverage, InstrumentXRay, LinkerPluginLto, LocationDetail,
+        LtoCli, NextSolverConfig, OomStrategy, OptLevel, OutFileName, OutputType, OutputTypes,
+        Polonius, RemapPathScopeComponents, ResolveDocLinks, SourceFileHashAlgorithm,
+        SplitDwarfKind, SwitchWithOptPath, SymbolManglingVersion, WasiExecModel,
     };
     use crate::lint;
     use crate::utils::NativeLib;
@@ -3287,6 +3250,7 @@ pub(crate) mod dep_tracking {
         CodeModel,
         TlsModel,
         InstrumentCoverage,
+        CoverageOptions,
         InstrumentXRay,
         CrateType,
         MergeFunctions,

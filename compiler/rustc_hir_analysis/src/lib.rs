@@ -100,18 +100,15 @@ mod variance;
 
 use rustc_errors::ErrorGuaranteed;
 use rustc_hir as hir;
+use rustc_hir::def::DefKind;
 use rustc_middle::middle;
 use rustc_middle::query::Providers;
-use rustc_middle::ty::{self, Ty, TyCtxt};
+use rustc_middle::ty::{Ty, TyCtxt};
 use rustc_middle::util;
 use rustc_session::parse::feature_err;
-use rustc_span::{symbol::sym, Span, DUMMY_SP};
+use rustc_span::{symbol::sym, Span};
 use rustc_target::spec::abi::Abi;
 use rustc_trait_selection::traits;
-
-use astconv::{AstConv, OnlySelfBounds};
-use bounds::Bounds;
-use rustc_hir::def::DefKind;
 
 rustc_fluent_macro::fluent_messages! { "../messages.ftl" }
 
@@ -153,27 +150,20 @@ pub fn provide(providers: &mut Providers) {
     check_unused::provide(providers);
     variance::provide(providers);
     outlives::provide(providers);
-    impl_wf_check::provide(providers);
     hir_wf_check::provide(providers);
 }
 
 pub fn check_crate(tcx: TyCtxt<'_>) -> Result<(), ErrorGuaranteed> {
     let _prof_timer = tcx.sess.timer("type_check_crate");
 
-    // this ensures that later parts of type checking can assume that items
-    // have valid types and not error
-    tcx.sess.time("type_collecting", || {
-        tcx.hir().for_each_module(|module| tcx.ensure().collect_mod_item_types(module))
-    });
-
     if tcx.features().rustc_attrs {
         tcx.sess.time("outlives_testing", || outlives::test::test_inferred_outlives(tcx))?;
     }
 
     tcx.sess.time("coherence_checking", || {
-        // Check impls constrain their parameters
-        let res =
-            tcx.hir().try_par_for_each_module(|module| tcx.ensure().check_mod_impl_wf(module));
+        tcx.hir().par_for_each_module(|module| {
+            let _ = tcx.ensure().check_mod_type_wf(module);
+        });
 
         for &trait_def_id in tcx.all_local_trait_impls(()).keys() {
             let _ = tcx.ensure().coherent_trait(trait_def_id);
@@ -181,18 +171,11 @@ pub fn check_crate(tcx: TyCtxt<'_>) -> Result<(), ErrorGuaranteed> {
         // these queries are executed for side-effects (error reporting):
         let _ = tcx.ensure().crate_inherent_impls(());
         let _ = tcx.ensure().crate_inherent_impls_overlap_check(());
-        res
-    })?;
+    });
 
     if tcx.features().rustc_attrs {
         tcx.sess.time("variance_testing", || variance::test::test_variance(tcx))?;
     }
-
-    tcx.sess.time("wf_checking", || {
-        tcx.hir().par_for_each_module(|module| {
-            let _ = tcx.ensure().check_mod_type_wf(module);
-        })
-    });
 
     if tcx.features().rustc_attrs {
         collect::test_opaque_hidden_types(tcx)?;
@@ -203,7 +186,7 @@ pub fn check_crate(tcx: TyCtxt<'_>) -> Result<(), ErrorGuaranteed> {
     tcx.hir().par_body_owners(|item_def_id| {
         let def_kind = tcx.def_kind(item_def_id);
         match def_kind {
-            DefKind::Static(_) => tcx.ensure().eval_static_initializer(item_def_id),
+            DefKind::Static { .. } => tcx.ensure().eval_static_initializer(item_def_id),
             DefKind::Const => tcx.ensure().const_eval_poly(item_def_id.into()),
             _ => (),
         }
@@ -236,31 +219,5 @@ pub fn hir_ty_to_ty<'tcx>(tcx: TyCtxt<'tcx>, hir_ty: &hir::Ty<'tcx>) -> Ty<'tcx>
     // def-ID that will be used to determine the traits/predicates in
     // scope. This is derived from the enclosing item-like thing.
     let env_def_id = tcx.hir().get_parent_item(hir_ty.hir_id);
-    let item_cx = self::collect::ItemCtxt::new(tcx, env_def_id.def_id);
-    item_cx.astconv().ast_ty_to_ty(hir_ty)
-}
-
-pub fn hir_trait_to_predicates<'tcx>(
-    tcx: TyCtxt<'tcx>,
-    hir_trait: &hir::TraitRef<'tcx>,
-    self_ty: Ty<'tcx>,
-) -> Bounds<'tcx> {
-    // In case there are any projections, etc., find the "environment"
-    // def-ID that will be used to determine the traits/predicates in
-    // scope. This is derived from the enclosing item-like thing.
-    let env_def_id = tcx.hir().get_parent_item(hir_trait.hir_ref_id);
-    let item_cx = self::collect::ItemCtxt::new(tcx, env_def_id.def_id);
-    let mut bounds = Bounds::default();
-    let _ = &item_cx.astconv().instantiate_poly_trait_ref(
-        hir_trait,
-        DUMMY_SP,
-        ty::BoundConstness::NotConst,
-        ty::ImplPolarity::Positive,
-        self_ty,
-        &mut bounds,
-        true,
-        OnlySelfBounds(false),
-    );
-
-    bounds
+    collect::ItemCtxt::new(tcx, env_def_id.def_id).to_ty(hir_ty)
 }

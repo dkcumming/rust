@@ -461,7 +461,7 @@ impl<'test> TestCx<'test> {
         }
 
         let mut new_config = self.config.clone();
-        new_config.runtool = new_config.valgrind_path.clone();
+        new_config.runner = new_config.valgrind_path.clone();
         let new_cx = TestCx { config: &new_config, ..*self };
         proc_res = new_cx.exec_compiled_test();
 
@@ -493,12 +493,8 @@ impl<'test> TestCx<'test> {
         let expected_coverage_dump = self.load_expected_output(kind);
         let actual_coverage_dump = self.normalize_output(&proc_res.stdout, &[]);
 
-        let coverage_dump_errors = self.compare_output(
-            kind,
-            &actual_coverage_dump,
-            &expected_coverage_dump,
-            self.props.compare_output_lines_by_subset,
-        );
+        let coverage_dump_errors =
+            self.compare_output(kind, &actual_coverage_dump, &expected_coverage_dump);
 
         if coverage_dump_errors > 0 {
             self.fatal_proc_rec(
@@ -591,12 +587,8 @@ impl<'test> TestCx<'test> {
                 self.fatal_proc_rec(&err, &proc_res);
             });
 
-        let coverage_errors = self.compare_output(
-            kind,
-            &normalized_actual_coverage,
-            &expected_coverage,
-            self.props.compare_output_lines_by_subset,
-        );
+        let coverage_errors =
+            self.compare_output(kind, &normalized_actual_coverage, &expected_coverage);
 
         if coverage_errors > 0 {
             self.fatal_proc_rec(
@@ -1474,49 +1466,16 @@ impl<'test> TestCx<'test> {
         // Switch LLDB into "Rust mode"
         let rust_src_root =
             self.config.find_rust_src_root().expect("Could not find Rust source root");
-        let rust_pp_module_rel_path = Path::new("./src/etc/lldb_lookup.py");
-        let rust_pp_module_abs_path =
-            rust_src_root.join(rust_pp_module_rel_path).to_str().unwrap().to_owned();
+        let rust_pp_module_rel_path = Path::new("./src/etc");
+        let rust_pp_module_abs_path = rust_src_root.join(rust_pp_module_rel_path);
 
-        let rust_type_regexes = vec![
-            "^(alloc::([a-z_]+::)+)String$",
-            "^&(mut )?str$",
-            "^&(mut )?\\[.+\\]$",
-            "^(std::ffi::([a-z_]+::)+)OsString$",
-            "^(alloc::([a-z_]+::)+)Vec<.+>$",
-            "^(alloc::([a-z_]+::)+)VecDeque<.+>$",
-            "^(alloc::([a-z_]+::)+)BTreeSet<.+>$",
-            "^(alloc::([a-z_]+::)+)BTreeMap<.+>$",
-            "^(std::collections::([a-z_]+::)+)HashMap<.+>$",
-            "^(std::collections::([a-z_]+::)+)HashSet<.+>$",
-            "^(alloc::([a-z_]+::)+)Rc<.+>$",
-            "^(alloc::([a-z_]+::)+)Arc<.+>$",
-            "^(core::([a-z_]+::)+)Cell<.+>$",
-            "^(core::([a-z_]+::)+)Ref<.+>$",
-            "^(core::([a-z_]+::)+)RefMut<.+>$",
-            "^(core::([a-z_]+::)+)RefCell<.+>$",
-            "^core::num::([a-z_]+::)*NonZero.+$",
-        ];
-
-        // In newer versions of lldb, persistent results (the `$N =` part at the start of
-        // expressions you have evaluated that let you re-use the result) aren't printed, but lots
-        // of rustc's debuginfo tests rely on these, so re-enable this.
-        // See <https://reviews.llvm.org/rG385496385476fc9735da5fa4acabc34654e8b30d>.
-        script_str.push_str("command unalias print\n");
-        script_str.push_str("command alias print expr --\n");
-        script_str.push_str("command unalias p\n");
-        script_str.push_str("command alias p expr --\n");
-
-        script_str
-            .push_str(&format!("command script import {}\n", &rust_pp_module_abs_path[..])[..]);
-        script_str.push_str("type synthetic add -l lldb_lookup.synthetic_lookup -x '.*' ");
-        script_str.push_str("--category Rust\n");
-        for type_regex in rust_type_regexes {
-            script_str.push_str("type summary add -F lldb_lookup.summary_lookup  -e -x -h ");
-            script_str.push_str(&format!("'{}' ", type_regex));
-            script_str.push_str("--category Rust\n");
-        }
-        script_str.push_str("type category enable Rust\n");
+        script_str.push_str(&format!(
+            "command script import {}/lldb_lookup.py\n",
+            rust_pp_module_abs_path.to_str().unwrap()
+        ));
+        File::open(rust_pp_module_abs_path.join("lldb_commands"))
+            .and_then(|mut file| file.read_to_string(&mut script_str))
+            .expect("Failed to read lldb_commands");
 
         // Set breakpoints on every line that contains the string "#break"
         let source_file_name = self.testpaths.file.file_name().unwrap().to_string_lossy();
@@ -2632,9 +2591,7 @@ impl<'test> TestCx<'test> {
         // double the length.
         let mut f = self.output_base_dir().join("a");
         // FIXME: This is using the host architecture exe suffix, not target!
-        if self.config.target.contains("emscripten") {
-            f = f.with_extra_extension("js");
-        } else if self.config.target.contains("wasm32") {
+        if self.config.target.starts_with("wasm") {
             f = f.with_extra_extension("wasm");
         } else if self.config.target.contains("spirv") {
             f = f.with_extra_extension("spv");
@@ -2647,33 +2604,7 @@ impl<'test> TestCx<'test> {
     fn make_run_args(&self) -> ProcArgs {
         // If we've got another tool to run under (valgrind),
         // then split apart its command
-        let mut args = self.split_maybe_args(&self.config.runtool);
-
-        // If this is emscripten, then run tests under nodejs
-        if self.config.target.contains("emscripten") {
-            if let Some(ref p) = self.config.nodejs {
-                args.push(p.into());
-            } else {
-                self.fatal("emscripten target requested and no NodeJS binary found (--nodejs)");
-            }
-        // If this is otherwise wasm, then run tests under nodejs with our
-        // shim
-        } else if self.config.target.contains("wasm32") {
-            if let Some(ref p) = self.config.nodejs {
-                args.push(p.into());
-            } else {
-                self.fatal("wasm32 target requested and no NodeJS binary found (--nodejs)");
-            }
-
-            let src = self
-                .config
-                .src_base
-                .parent()
-                .unwrap() // chop off `ui`
-                .parent()
-                .unwrap(); // chop off `tests`
-            args.push(src.join("src/etc/wasm32-shim.js").into_os_string());
-        }
+        let mut args = self.split_maybe_args(&self.config.runner);
 
         let exe_file = self.make_exe_name();
 
@@ -3803,36 +3734,42 @@ impl<'test> TestCx<'test> {
         debug!(?support_lib_deps);
         debug!(?support_lib_deps_deps);
 
-        let res = self.cmd2procres(
-            Command::new(&self.config.rustc_path)
-                .arg("-o")
-                .arg(&recipe_bin)
-                .arg(format!(
-                    "-Ldependency={}",
-                    &support_lib_path.parent().unwrap().to_string_lossy()
-                ))
-                .arg(format!("-Ldependency={}", &support_lib_deps.to_string_lossy()))
-                .arg(format!("-Ldependency={}", &support_lib_deps_deps.to_string_lossy()))
-                .arg("--extern")
-                .arg(format!("run_make_support={}", &support_lib_path.to_string_lossy()))
-                .arg(&self.testpaths.file.join("rmake.rs"))
-                .env("TARGET", &self.config.target)
-                .env("PYTHON", &self.config.python)
-                .env("S", &src_root)
-                .env("RUST_BUILD_STAGE", &self.config.stage_id)
-                .env("RUSTC", cwd.join(&self.config.rustc_path))
-                .env("TMPDIR", &tmpdir)
-                .env("LD_LIB_PATH_ENVVAR", dylib_env_var())
-                .env("HOST_RPATH_DIR", cwd.join(&self.config.compile_lib_path))
-                .env("TARGET_RPATH_DIR", cwd.join(&self.config.run_lib_path))
-                .env("LLVM_COMPONENTS", &self.config.llvm_components)
-                // We for sure don't want these tests to run in parallel, so make
-                // sure they don't have access to these vars if we run via `make`
-                // at the top level
-                .env_remove("MAKEFLAGS")
-                .env_remove("MFLAGS")
-                .env_remove("CARGO_MAKEFLAGS"),
-        );
+        let mut cmd = Command::new(&self.config.rustc_path);
+        cmd.arg("-o")
+            .arg(&recipe_bin)
+            .arg(format!("-Ldependency={}", &support_lib_path.parent().unwrap().to_string_lossy()))
+            .arg(format!("-Ldependency={}", &support_lib_deps.to_string_lossy()))
+            .arg(format!("-Ldependency={}", &support_lib_deps_deps.to_string_lossy()))
+            .arg("--extern")
+            .arg(format!("run_make_support={}", &support_lib_path.to_string_lossy()))
+            .arg(&self.testpaths.file.join("rmake.rs"))
+            .env("TARGET", &self.config.target)
+            .env("PYTHON", &self.config.python)
+            .env("S", &src_root)
+            .env("RUST_BUILD_STAGE", &self.config.stage_id)
+            .env("RUSTC", cwd.join(&self.config.rustc_path))
+            .env("TMPDIR", &tmpdir)
+            .env("LD_LIB_PATH_ENVVAR", dylib_env_var())
+            .env("HOST_RPATH_DIR", cwd.join(&self.config.compile_lib_path))
+            .env("TARGET_RPATH_DIR", cwd.join(&self.config.run_lib_path))
+            .env("LLVM_COMPONENTS", &self.config.llvm_components)
+            // We for sure don't want these tests to run in parallel, so make
+            // sure they don't have access to these vars if we run via `make`
+            // at the top level
+            .env_remove("MAKEFLAGS")
+            .env_remove("MFLAGS")
+            .env_remove("CARGO_MAKEFLAGS");
+
+        if std::env::var_os("COMPILETEST_FORCE_STAGE0").is_some() {
+            let mut stage0_sysroot = build_root.clone();
+            stage0_sysroot.push("stage0-sysroot");
+            debug!(?stage0_sysroot);
+            debug!(exists = stage0_sysroot.exists());
+
+            cmd.arg("--sysroot").arg(&stage0_sysroot);
+        }
+
+        let res = self.cmd2procres(&mut cmd);
         if !res.status.success() {
             self.fatal_proc_rec("run-make test failed: could not build `rmake.rs` recipe", &res);
         }
@@ -4079,35 +4016,17 @@ impl<'test> TestCx<'test> {
         match output_kind {
             TestOutput::Compile => {
                 if !self.props.dont_check_compiler_stdout {
-                    errors += self.compare_output(
-                        stdout_kind,
-                        &normalized_stdout,
-                        &expected_stdout,
-                        self.props.compare_output_lines_by_subset,
-                    );
+                    errors +=
+                        self.compare_output(stdout_kind, &normalized_stdout, &expected_stdout);
                 }
                 if !self.props.dont_check_compiler_stderr {
-                    errors += self.compare_output(
-                        stderr_kind,
-                        &normalized_stderr,
-                        &expected_stderr,
-                        self.props.compare_output_lines_by_subset,
-                    );
+                    errors +=
+                        self.compare_output(stderr_kind, &normalized_stderr, &expected_stderr);
                 }
             }
             TestOutput::Run => {
-                errors += self.compare_output(
-                    stdout_kind,
-                    &normalized_stdout,
-                    &expected_stdout,
-                    self.props.compare_output_lines_by_subset,
-                );
-                errors += self.compare_output(
-                    stderr_kind,
-                    &normalized_stderr,
-                    &expected_stderr,
-                    self.props.compare_output_lines_by_subset,
-                );
+                errors += self.compare_output(stdout_kind, &normalized_stdout, &expected_stdout);
+                errors += self.compare_output(stderr_kind, &normalized_stderr, &expected_stderr);
             }
         }
         errors
@@ -4201,12 +4120,7 @@ impl<'test> TestCx<'test> {
                 )
             });
 
-            errors += self.compare_output(
-                "fixed",
-                &fixed_code,
-                &expected_fixed,
-                self.props.compare_output_lines_by_subset,
-            );
+            errors += self.compare_output("fixed", &fixed_code, &expected_fixed);
         } else if !expected_fixed.is_empty() {
             panic!(
                 "the `//@ run-rustfix` directive wasn't found but a `*.fixed` \
@@ -4701,16 +4615,18 @@ impl<'test> TestCx<'test> {
         }
     }
 
-    fn compare_output(
-        &self,
-        kind: &str,
-        actual: &str,
-        expected: &str,
-        compare_output_by_lines: bool,
-    ) -> usize {
+    fn compare_output(&self, kind: &str, actual: &str, expected: &str) -> usize {
         if actual == expected {
             return 0;
         }
+
+        // If `compare-output-lines-by-subset` is not explicitly enabled then
+        // auto-enable it when a `runner` is in use since wrapper tools might
+        // provide extra output on failure, for example a WebAssembly runtime
+        // might print the stack trace of an `unreachable` instruction by
+        // default.
+        let compare_output_by_lines =
+            self.props.compare_output_lines_by_subset || self.config.runner.is_some();
 
         let tmp;
         let (expected, actual): (&str, &str) = if compare_output_by_lines {

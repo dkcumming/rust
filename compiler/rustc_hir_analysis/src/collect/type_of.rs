@@ -1,3 +1,4 @@
+use core::ops::ControlFlow;
 use rustc_errors::{Applicability, StashKey};
 use rustc_hir as hir;
 use rustc_hir::def_id::{DefId, LocalDefId};
@@ -5,7 +6,7 @@ use rustc_hir::HirId;
 use rustc_middle::query::plumbing::CyclePlaceholder;
 use rustc_middle::ty::print::with_forced_trimmed_paths;
 use rustc_middle::ty::util::IntTypeExt;
-use rustc_middle::ty::{self, ImplTraitInTraitData, IsSuggestable, Ty, TyCtxt, TypeVisitableExt};
+use rustc_middle::ty::{self, IsSuggestable, Ty, TyCtxt, TypeVisitableExt};
 use rustc_span::symbol::Ident;
 use rustc_span::{Span, DUMMY_SP};
 
@@ -78,37 +79,6 @@ fn anon_const_type_of<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> Ty<'tcx> {
                 .expect("const parameter types cannot be generic");
         }
 
-        Node::TypeBinding(binding @ &TypeBinding { hir_id: binding_id, .. })
-            if let Node::TraitRef(trait_ref) = tcx.parent_hir_node(binding_id) =>
-        {
-            let Some(trait_def_id) = trait_ref.trait_def_id() else {
-                return Ty::new_error_with_message(
-                    tcx,
-                    tcx.def_span(def_id),
-                    "Could not find trait",
-                );
-            };
-            let assoc_items = tcx.associated_items(trait_def_id);
-            let assoc_item = assoc_items.find_by_name_and_kind(
-                tcx,
-                binding.ident,
-                ty::AssocKind::Const,
-                def_id.to_def_id(),
-            );
-            return if let Some(assoc_item) = assoc_item {
-                tcx.type_of(assoc_item.def_id)
-                    .no_bound_vars()
-                    .expect("const parameter types cannot be generic")
-            } else {
-                // FIXME(associated_const_equality): add a useful error message here.
-                Ty::new_error_with_message(
-                    tcx,
-                    tcx.def_span(def_id),
-                    "Could not find associated const on trait",
-                )
-            };
-        }
-
         // This match arm is for when the def_id appears in a GAT whose
         // path can't be resolved without typechecking e.g.
         //
@@ -138,8 +108,7 @@ fn anon_const_type_of<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> Ty<'tcx> {
                 .unwrap()
                 .0
                 .def_id;
-            let item_ctxt = &ItemCtxt::new(tcx, item_def_id) as &dyn crate::astconv::AstConv<'_>;
-            let ty = item_ctxt.ast_ty_to_ty(hir_ty);
+            let ty = ItemCtxt::new(tcx, item_def_id).to_ty(hir_ty);
 
             // Iterate through the generics of the projection to find the one that corresponds to
             // the def_id that this query was called with. We filter to only type and const args here
@@ -350,22 +319,31 @@ pub(super) fn type_of(tcx: TyCtxt<'_>, def_id: LocalDefId) -> ty::EarlyBinder<Ty
     // If we are computing `type_of` the synthesized associated type for an RPITIT in the impl
     // side, use `collect_return_position_impl_trait_in_trait_tys` to infer the value of the
     // associated type in the impl.
-    if let Some(ImplTraitInTraitData::Impl { fn_def_id, .. }) =
-        tcx.opt_rpitit_info(def_id.to_def_id())
-    {
-        match tcx.collect_return_position_impl_trait_in_trait_tys(fn_def_id) {
-            Ok(map) => {
-                let assoc_item = tcx.associated_item(def_id);
-                return map[&assoc_item.trait_item_def_id.unwrap()];
-            }
-            Err(_) => {
-                return ty::EarlyBinder::bind(Ty::new_error_with_message(
-                    tcx,
-                    DUMMY_SP,
-                    "Could not collect return position impl trait in trait tys",
-                ));
+    match tcx.opt_rpitit_info(def_id.to_def_id()) {
+        Some(ty::ImplTraitInTraitData::Impl { fn_def_id }) => {
+            match tcx.collect_return_position_impl_trait_in_trait_tys(fn_def_id) {
+                Ok(map) => {
+                    let assoc_item = tcx.associated_item(def_id);
+                    return map[&assoc_item.trait_item_def_id.unwrap()];
+                }
+                Err(_) => {
+                    return ty::EarlyBinder::bind(Ty::new_error_with_message(
+                        tcx,
+                        DUMMY_SP,
+                        "Could not collect return position impl trait in trait tys",
+                    ));
+                }
             }
         }
+        // For an RPITIT in a trait, just return the corresponding opaque.
+        Some(ty::ImplTraitInTraitData::Trait { opaque_def_id, .. }) => {
+            return ty::EarlyBinder::bind(Ty::new_opaque(
+                tcx,
+                opaque_def_id,
+                ty::GenericArgs::identity_for_item(tcx, opaque_def_id),
+            ));
+        }
+        None => {}
     }
 
     let hir_id = tcx.local_def_id_to_hir_id(def_id);
@@ -544,11 +522,11 @@ pub(super) fn type_of_opaque(
         Ok(ty::EarlyBinder::bind(match tcx.hir_node_by_def_id(def_id) {
             Node::Item(item) => match item.kind {
                 ItemKind::OpaqueTy(OpaqueTy {
-                    origin: hir::OpaqueTyOrigin::TyAlias { in_assoc_ty: false },
+                    origin: hir::OpaqueTyOrigin::TyAlias { in_assoc_ty: false, .. },
                     ..
                 }) => opaque::find_opaque_ty_constraints_for_tait(tcx, def_id),
                 ItemKind::OpaqueTy(OpaqueTy {
-                    origin: hir::OpaqueTyOrigin::TyAlias { in_assoc_ty: true },
+                    origin: hir::OpaqueTyOrigin::TyAlias { in_assoc_ty: true, .. },
                     ..
                 }) => opaque::find_opaque_ty_constraints_for_impl_trait_in_assoc_type(tcx, def_id),
                 // Opaque types desugared from `impl Trait`.
@@ -666,19 +644,16 @@ pub fn type_alias_is_lazy<'tcx>(tcx: TyCtxt<'tcx>, def_id: LocalDefId) -> bool {
     if tcx.features().lazy_type_alias {
         return true;
     }
-    struct HasTait {
-        has_type_alias_impl_trait: bool,
-    }
+    struct HasTait;
     impl<'tcx> Visitor<'tcx> for HasTait {
-        fn visit_ty(&mut self, t: &'tcx hir::Ty<'tcx>) {
+        type Result = ControlFlow<()>;
+        fn visit_ty(&mut self, t: &'tcx hir::Ty<'tcx>) -> Self::Result {
             if let hir::TyKind::OpaqueDef(..) = t.kind {
-                self.has_type_alias_impl_trait = true;
+                ControlFlow::Break(())
             } else {
-                hir::intravisit::walk_ty(self, t);
+                hir::intravisit::walk_ty(self, t)
             }
         }
     }
-    let mut has_tait = HasTait { has_type_alias_impl_trait: false };
-    has_tait.visit_ty(tcx.hir().expect_item(def_id).expect_ty_alias().0);
-    has_tait.has_type_alias_impl_trait
+    HasTait.visit_ty(tcx.hir().expect_item(def_id).expect_ty_alias().0).is_break()
 }

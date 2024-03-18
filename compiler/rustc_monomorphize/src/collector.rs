@@ -380,8 +380,12 @@ fn collect_items_rec<'tcx>(
             // Sanity check whether this ended up being collected accidentally
             debug_assert!(should_codegen_locally(tcx, &instance));
 
-            let ty = instance.ty(tcx, ty::ParamEnv::reveal_all());
-            visit_drop_use(tcx, ty, true, starting_item.span, &mut used_items);
+            let DefKind::Static { nested, .. } = tcx.def_kind(def_id) else { bug!() };
+            // Nested statics have no type.
+            if !nested {
+                let ty = instance.ty(tcx, ty::ParamEnv::reveal_all());
+                visit_drop_use(tcx, ty, true, starting_item.span, &mut used_items);
+            }
 
             recursion_depth_reset = None;
 
@@ -446,7 +450,8 @@ fn collect_items_rec<'tcx>(
                         hir::InlineAsmOperand::In { .. }
                         | hir::InlineAsmOperand::Out { .. }
                         | hir::InlineAsmOperand::InOut { .. }
-                        | hir::InlineAsmOperand::SplitInOut { .. } => {
+                        | hir::InlineAsmOperand::SplitInOut { .. }
+                        | hir::InlineAsmOperand::Label { .. } => {
                             span_bug!(*op_sp, "invalid operand type for global_asm!")
                         }
                     }
@@ -813,21 +818,27 @@ impl<'a, 'tcx> MirVisitor<'tcx> for MirUsedCollector<'a, 'tcx> {
         self.super_rvalue(rvalue, location);
     }
 
-    /// This does not walk the constant, as it has been handled entirely here and trying
-    /// to walk it would attempt to evaluate the `ty::Const` inside, which doesn't necessarily
-    /// work, as some constants cannot be represented in the type system.
+    /// This does not walk the MIR of the constant as that is not needed for codegen, all we need is
+    /// to ensure that the constant evaluates successfully and walk the result.
     #[instrument(skip(self), level = "debug")]
     fn visit_constant(&mut self, constant: &mir::ConstOperand<'tcx>, location: Location) {
         let const_ = self.monomorphize(constant.const_);
         let param_env = ty::ParamEnv::reveal_all();
-        let val = match const_.eval(self.tcx, param_env, None) {
+        // Evaluate the constant. This makes const eval failure a collection-time error (rather than
+        // a codegen-time error). rustc stops after collection if there was an error, so this
+        // ensures codegen never has to worry about failing consts.
+        // (codegen relies on this and ICEs will happen if this is violated.)
+        let val = match const_.eval(self.tcx, param_env, Some(constant.span)) {
             Ok(v) => v,
-            Err(ErrorHandled::Reported(..)) => return,
             Err(ErrorHandled::TooGeneric(..)) => span_bug!(
                 self.body.source_info(location).span,
                 "collection encountered polymorphic constant: {:?}",
                 const_
             ),
+            Err(err @ ErrorHandled::Reported(..)) => {
+                err.emit_note(self.tcx);
+                return;
+            }
         };
         collect_const_value(self.tcx, val, self.output);
         MirVisitor::visit_ty(self, const_.ty(), TyContext::Location(location));
@@ -1036,7 +1047,7 @@ fn should_codegen_locally<'tcx>(tcx: TyCtxt<'tcx>, instance: &Instance<'tcx>) ->
         return false;
     }
 
-    if let DefKind::Static(_) = tcx.def_kind(def_id) {
+    if let DefKind::Static { .. } = tcx.def_kind(def_id) {
         // We cannot monomorphize statics from upstream crates.
         return false;
     }
@@ -1253,7 +1264,7 @@ impl<'v> RootCollector<'_, 'v> {
                 );
                 self.output.push(dummy_spanned(MonoItem::GlobalAsm(id)));
             }
-            DefKind::Static(..) => {
+            DefKind::Static { .. } => {
                 let def_id = id.owner_id.to_def_id();
                 debug!("RootCollector: ItemKind::Static({})", self.tcx.def_path_str(def_id));
                 self.output.push(dummy_spanned(MonoItem::Static(def_id)));
@@ -1338,14 +1349,12 @@ impl<'v> RootCollector<'_, 'v> {
             main_ret_ty.no_bound_vars().unwrap(),
         );
 
-        let start_instance = Instance::resolve(
+        let start_instance = Instance::expect_resolve(
             self.tcx,
             ty::ParamEnv::reveal_all(),
             start_def_id,
             self.tcx.mk_args(&[main_ret_ty.into()]),
-        )
-        .unwrap()
-        .unwrap();
+        );
 
         self.output.push(create_fn_mono_item(self.tcx, start_instance, DUMMY_SP));
     }
@@ -1361,7 +1370,7 @@ fn create_mono_items_for_default_impls<'tcx>(
         return;
     };
 
-    if matches!(impl_.skip_binder().polarity, ty::ImplPolarity::Negative) {
+    if matches!(impl_.polarity, ty::ImplPolarity::Negative) {
         return;
     }
 
@@ -1385,7 +1394,7 @@ fn create_mono_items_for_default_impls<'tcx>(
         }
     };
     let impl_args = GenericArgs::for_item(tcx, item.owner_id.to_def_id(), only_region_params);
-    let trait_ref = impl_.instantiate(tcx, impl_args).trait_ref;
+    let trait_ref = impl_.trait_ref.instantiate(tcx, impl_args);
 
     // Unlike 'lazy' monomorphization that begins by collecting items transitively
     // called by `main` or other global items, when eagerly monomorphizing impl
@@ -1424,7 +1433,7 @@ fn create_mono_items_for_default_impls<'tcx>(
     }
 }
 
-/// Scans the CTFE alloc in order to find function calls, closures, and drop-glue.
+/// Scans the CTFE alloc in order to find function pointers and statics that must be monomorphized.
 fn collect_alloc<'tcx>(tcx: TyCtxt<'tcx>, alloc_id: AllocId, output: &mut MonoItems<'tcx>) {
     match tcx.global_alloc(alloc_id) {
         GlobalAlloc::Static(def_id) => {
@@ -1437,9 +1446,13 @@ fn collect_alloc<'tcx>(tcx: TyCtxt<'tcx>, alloc_id: AllocId, output: &mut MonoIt
         }
         GlobalAlloc::Memory(alloc) => {
             trace!("collecting {:?} with {:#?}", alloc_id, alloc);
-            for &prov in alloc.inner().provenance().ptrs().values() {
-                rustc_data_structures::stack::ensure_sufficient_stack(|| {
-                    collect_alloc(tcx, prov.alloc_id(), output);
+            let ptrs = alloc.inner().provenance().ptrs();
+            // avoid `ensure_sufficient_stack` in the common case of "no pointers"
+            if !ptrs.is_empty() {
+                rustc_data_structures::stack::ensure_sufficient_stack(move || {
+                    for &prov in ptrs.values() {
+                        collect_alloc(tcx, prov.alloc_id(), output);
+                    }
                 });
             }
         }

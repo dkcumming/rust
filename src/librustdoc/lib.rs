@@ -179,21 +179,14 @@ pub fn main() {
     rustc_driver::init_logger(&early_dcx, rustc_log::LoggerConfig::from_env("RUSTDOC_LOG"));
 
     let exit_code = rustc_driver::catch_with_exit_code(|| {
-        let args = env::args_os()
-            .enumerate()
-            .map(|(i, arg)| {
-                arg.into_string().unwrap_or_else(|arg| {
-                    early_dcx.early_fatal(format!("argument {i} is not valid Unicode: {arg:?}"))
-                })
-            })
-            .collect::<Vec<_>>();
-        main_args(&mut early_dcx, &args, using_internal_features)
+        let at_args = rustc_driver::args::raw_args(&early_dcx)?;
+        main_args(&mut early_dcx, &at_args, using_internal_features)
     });
     process::exit(exit_code);
 }
 
 fn init_logging(early_dcx: &EarlyDiagCtxt) {
-    let color_logs = match std::env::var("RUSTDOC_LOG_COLOR").as_deref() {
+    let color_logs = match env::var("RUSTDOC_LOG_COLOR").as_deref() {
         Ok("always") => true,
         Ok("never") => false,
         Ok("auto") | Err(VarError::NotPresent) => io::stdout().is_terminal(),
@@ -537,6 +530,14 @@ fn opts() -> Vec<RustcOptGroup> {
         unstable("test-builder", |o| {
             o.optopt("", "test-builder", "The rustc-like binary to use as the test builder", "PATH")
         }),
+        unstable("test-builder-wrapper", |o| {
+            o.optmulti(
+                "",
+                "test-builder-wrapper",
+                "Wrapper program to pass test-builder and arguments",
+                "PATH",
+            )
+        }),
         unstable("check", |o| o.optflagmulti("", "check", "Run rustdoc checks")),
         unstable("generate-redirect-map", |o| {
             o.optflagmulti(
@@ -705,7 +706,7 @@ fn main_args(
     // the compiler with @empty_file as argv[0] and no more arguments.
     let at_args = at_args.get(1..).unwrap_or_default();
 
-    let args = rustc_driver::args::arg_expand_all(early_dcx, at_args);
+    let args = rustc_driver::args::arg_expand_all(early_dcx, at_args)?;
 
     let mut options = getopts::Options::new();
     for option in opts() {

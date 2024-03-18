@@ -191,9 +191,9 @@ impl StructData {
         let krate = loc.container.krate;
         let item_tree = loc.id.item_tree(db);
         let repr = repr_from_value(db, krate, &item_tree, ModItem::from(loc.id.value).into());
-        let cfg_options = db.crate_graph()[loc.container.krate].cfg_options.clone();
+        let cfg_options = db.crate_graph()[krate].cfg_options.clone();
 
-        let attrs = item_tree.attrs(db, loc.container.krate, ModItem::from(loc.id.value).into());
+        let attrs = item_tree.attrs(db, krate, ModItem::from(loc.id.value).into());
 
         let mut flags = StructFlags::NO_FLAGS;
         if attrs.by_key("rustc_has_incoherent_inherent_impls").exists() {
@@ -248,9 +248,9 @@ impl StructData {
         let krate = loc.container.krate;
         let item_tree = loc.id.item_tree(db);
         let repr = repr_from_value(db, krate, &item_tree, ModItem::from(loc.id.value).into());
-        let cfg_options = db.crate_graph()[loc.container.krate].cfg_options.clone();
+        let cfg_options = db.crate_graph()[krate].cfg_options.clone();
 
-        let attrs = item_tree.attrs(db, loc.container.krate, ModItem::from(loc.id.value).into());
+        let attrs = item_tree.attrs(db, krate, ModItem::from(loc.id.value).into());
         let mut flags = StructFlags::NO_FLAGS;
         if attrs.by_key("rustc_has_incoherent_inherent_impls").exists() {
             flags |= StructFlags::IS_RUSTC_HAS_INCOHERENT_INHERENT_IMPL;
@@ -400,7 +400,7 @@ pub(crate) fn lower_struct(
     item_tree: &ItemTree,
     fields: &Fields,
 ) -> StructKind {
-    let ctx = LowerCtx::with_file_id(db, ast.file_id);
+    let ctx = LowerCtx::new(db, ast.file_id);
 
     match (&ast.value, fields) {
         (ast::StructKind::Tuple(fl), Fields::Tuple(fields)) => {
@@ -415,7 +415,9 @@ pub(crate) fn lower_struct(
                     || FieldData {
                         name: Name::new_tuple_field(i),
                         type_ref: Interned::new(TypeRef::from_ast_opt(&ctx, fd.ty())),
-                        visibility: RawVisibility::from_ast(db, ast.with_value(fd.visibility())),
+                        visibility: RawVisibility::from_ast(db, fd.visibility(), &mut |range| {
+                            ctx.span_map().span_for_range(range).ctx
+                        }),
                     },
                 );
             }
@@ -433,7 +435,9 @@ pub(crate) fn lower_struct(
                     || FieldData {
                         name: fd.name().map(|n| n.as_name()).unwrap_or_else(Name::missing),
                         type_ref: Interned::new(TypeRef::from_ast_opt(&ctx, fd.ty())),
-                        visibility: RawVisibility::from_ast(db, ast.with_value(fd.visibility())),
+                        visibility: RawVisibility::from_ast(db, fd.visibility(), &mut |range| {
+                            ctx.span_map().span_for_range(range).ctx
+                        }),
                     },
                 );
             }

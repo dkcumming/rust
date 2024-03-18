@@ -5,7 +5,7 @@ use crate::ty::normalize_erasing_regions::NormalizationError;
 use crate::ty::{self, ConstKind, Ty, TyCtxt, TypeVisitableExt};
 use rustc_error_messages::DiagMessage;
 use rustc_errors::{
-    Diag, DiagArgValue, DiagCtxt, EmissionGuarantee, IntoDiagnostic, IntoDiagnosticArg, Level,
+    Diag, DiagArgValue, DiagCtxt, Diagnostic, EmissionGuarantee, IntoDiagArg, Level,
 };
 use rustc_hir as hir;
 use rustc_hir::def_id::DefId;
@@ -17,6 +17,7 @@ use rustc_target::abi::call::FnAbi;
 use rustc_target::abi::*;
 use rustc_target::spec::{abi::Abi as SpecAbi, HasTargetSpec, PanicStrategy, Target};
 
+use std::borrow::Cow;
 use std::cmp;
 use std::fmt;
 use std::num::NonZero;
@@ -253,9 +254,9 @@ impl<'tcx> fmt::Display for LayoutError<'tcx> {
     }
 }
 
-impl<'tcx> IntoDiagnosticArg for LayoutError<'tcx> {
-    fn into_diagnostic_arg(self) -> DiagArgValue {
-        self.to_string().into_diagnostic_arg()
+impl<'tcx> IntoDiagArg for LayoutError<'tcx> {
+    fn into_diag_arg(self) -> DiagArgValue {
+        self.to_string().into_diag_arg()
     }
 }
 
@@ -268,7 +269,7 @@ pub struct LayoutCx<'tcx, C> {
 impl<'tcx> LayoutCalculator for LayoutCx<'tcx, TyCtxt<'tcx>> {
     type TargetDataLayoutRef = &'tcx TargetDataLayout;
 
-    fn delayed_bug(&self, txt: String) {
+    fn delayed_bug(&self, txt: impl Into<Cow<'static, str>>) {
         self.tcx.dcx().delayed_bug(txt);
     }
 
@@ -969,6 +970,8 @@ where
         }
     }
 
+    /// Compute the information for the pointer stored at the given offset inside this type.
+    /// This will recurse into fields of ADTs to find the inner pointer.
     fn ty_and_layout_pointee_info_at(
         this: TyAndLayout<'tcx>,
         cx: &C,
@@ -1068,15 +1071,17 @@ where
                     }
                 }
 
-                // FIXME(eddyb) This should be for `ptr::Unique<T>`, not `Box<T>`.
+                // Fixup info for the first field of a `Box`. Recursive traversal will have found
+                // the raw pointer, so size and align are set to the boxed type, but `pointee.safe`
+                // will still be `None`.
                 if let Some(ref mut pointee) = result {
-                    if let ty::Adt(def, _) = this.ty.kind() {
-                        if def.is_box() && offset.bytes() == 0 {
-                            let optimize = tcx.sess.opts.optimize != OptLevel::No;
-                            pointee.safe = Some(PointerKind::Box {
-                                unpin: optimize && this.ty.boxed_ty().is_unpin(tcx, cx.param_env()),
-                            });
-                        }
+                    if offset.bytes() == 0 && this.ty.is_box() {
+                        debug_assert!(pointee.safe.is_none());
+                        let optimize = tcx.sess.opts.optimize != OptLevel::No;
+                        pointee.safe = Some(PointerKind::Box {
+                            unpin: optimize && this.ty.boxed_ty().is_unpin(tcx, cx.param_env()),
+                            global: this.ty.is_box_global(tcx),
+                        });
                     }
                 }
 
@@ -1262,14 +1267,14 @@ pub enum FnAbiError<'tcx> {
     AdjustForForeignAbi(call::AdjustForForeignAbiError),
 }
 
-impl<'a, 'b, G: EmissionGuarantee> IntoDiagnostic<'a, G> for FnAbiError<'b> {
-    fn into_diagnostic(self, dcx: &'a DiagCtxt, level: Level) -> Diag<'a, G> {
+impl<'a, 'b, G: EmissionGuarantee> Diagnostic<'a, G> for FnAbiError<'b> {
+    fn into_diag(self, dcx: &'a DiagCtxt, level: Level) -> Diag<'a, G> {
         match self {
-            Self::Layout(e) => e.into_diagnostic().into_diagnostic(dcx, level),
+            Self::Layout(e) => e.into_diagnostic().into_diag(dcx, level),
             Self::AdjustForForeignAbi(call::AdjustForForeignAbiError::Unsupported {
                 arch,
                 abi,
-            }) => UnsupportedFnAbi { arch, abi: abi.name() }.into_diagnostic(dcx, level),
+            }) => UnsupportedFnAbi { arch, abi: abi.name() }.into_diag(dcx, level),
         }
     }
 }

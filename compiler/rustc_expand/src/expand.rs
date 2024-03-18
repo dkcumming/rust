@@ -659,7 +659,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
 
         let (fragment_kind, span) = (invoc.fragment_kind, invoc.span());
         ExpandResult::Ready(match invoc.kind {
-            InvocationKind::Bang { mac, .. } => match ext {
+            InvocationKind::Bang { mac, span } => match ext {
                 SyntaxExtensionKind::Bang(expander) => {
                     match expander.expand(self.cx, span, mac.args.tokens.clone()) {
                         Ok(tok_result) => {
@@ -669,7 +669,16 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
                     }
                 }
                 SyntaxExtensionKind::LegacyBang(expander) => {
-                    let tok_result = expander.expand(self.cx, span, mac.args.tokens.clone());
+                    let tok_result = match expander.expand(self.cx, span, mac.args.tokens.clone()) {
+                        ExpandResult::Ready(tok_result) => tok_result,
+                        ExpandResult::Retry(_) => {
+                            // retry the original
+                            return ExpandResult::Retry(Invocation {
+                                kind: InvocationKind::Bang { mac, span },
+                                ..invoc
+                            });
+                        }
+                    };
                     let result = if let Some(result) = fragment_kind.make_from(tok_result) {
                         result
                     } else {
@@ -783,6 +792,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
         })
     }
 
+    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
     fn gate_proc_macro_attr_item(&self, span: Span, item: &Annotatable) {
         let kind = match item {
             Annotatable::Item(_)
@@ -825,6 +835,7 @@ impl<'a, 'b> MacroExpander<'a, 'b> {
         }
 
         impl<'ast, 'a> Visitor<'ast> for GateProcMacroInput<'a> {
+            #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
             fn visit_item(&mut self, item: &'ast ast::Item) {
                 match &item.kind {
                     ItemKind::Mod(_, mod_kind)
@@ -1378,7 +1389,7 @@ impl InvocationCollectorNode for ast::Stmt {
             StmtKind::Item(item) => matches!(item.kind, ItemKind::MacCall(..)),
             StmtKind::Semi(expr) => matches!(expr.kind, ExprKind::MacCall(..)),
             StmtKind::Expr(..) => unreachable!(),
-            StmtKind::Local(..) | StmtKind::Empty => false,
+            StmtKind::Let(..) | StmtKind::Empty => false,
         }
     }
     fn take_mac_call(self) -> (P<ast::MacCall>, Self::AttrsTy, AddSemicolon) {
@@ -1689,6 +1700,7 @@ impl<'a, 'b> InvocationCollector<'a, 'b> {
 
     // Detect use of feature-gated or invalid attributes on macro invocations
     // since they will not be detected after macro expansion.
+    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
     fn check_attributes(&self, attrs: &[ast::Attribute], call: &ast::MacCall) {
         let features = self.cx.ecfg.features;
         let mut attrs = attrs.iter().peekable();

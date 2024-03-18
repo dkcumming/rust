@@ -32,20 +32,14 @@ All tier 1 targets with host tools support the full standard library.
 
 target | notes
 -------|-------
-`aarch64-unknown-linux-gnu` | ARM64 Linux (kernel 4.1, glibc 2.17+) [^missing-stack-probes]
-`i686-pc-windows-gnu` | 32-bit MinGW (Windows 7+) [^windows-support] [^x86_32-floats-return-ABI]
-`i686-pc-windows-msvc` | 32-bit MSVC (Windows 7+) [^windows-support] [^x86_32-floats-return-ABI]
+`aarch64-unknown-linux-gnu` | ARM64 Linux (kernel 4.1, glibc 2.17+)
+`i686-pc-windows-gnu` | 32-bit MinGW (Windows 10+) [^x86_32-floats-return-ABI]
+`i686-pc-windows-msvc` | 32-bit MSVC (Windows 10+) [^x86_32-floats-return-ABI]
 `i686-unknown-linux-gnu` | 32-bit Linux (kernel 3.2+, glibc 2.17+) [^x86_32-floats-return-ABI]
 `x86_64-apple-darwin` | 64-bit macOS (10.12+, Sierra+)
-`x86_64-pc-windows-gnu` | 64-bit MinGW (Windows 7+) [^windows-support]
-`x86_64-pc-windows-msvc` | 64-bit MSVC (Windows 7+) [^windows-support]
+`x86_64-pc-windows-gnu` | 64-bit MinGW (Windows 10+)
+`x86_64-pc-windows-msvc` | 64-bit MSVC (Windows 10+)
 `x86_64-unknown-linux-gnu` | 64-bit Linux (kernel 3.2+, glibc 2.17+)
-
-[^missing-stack-probes]: Stack probes support is missing on
-  `aarch64-unknown-linux-gnu`, but it's planned to be implemented in the near
-  future. The implementation is tracked on [issue #77071][77071].
-
-[^windows-support]: Only Windows 10 currently undergoes automated testing. Earlier versions of Windows rely on testing and support from the community.
 
 [^x86_32-floats-return-ABI]: Due to limitations of the C ABI, floating-point support on `i686` targets is non-compliant: floating-point return values are passed via an x87 register, so NaN payload bits can be lost. See [issue #114479][x86-32-float-issue].
 
@@ -124,6 +118,7 @@ The `std` column in the table below has the following meanings:
 
 * ✓ indicates the full standard library is available.
 * \* indicates the target only supports [`no_std`] development.
+* ? indicates the standard library support is unknown or a work-in-progress.
 
 [`no_std`]: https://rust-embedded.github.io/book/intro/no-std.html
 
@@ -146,7 +141,7 @@ target | std | notes
 [`aarch64-unknown-linux-ohos`](platform-support/openharmony.md) | ✓ | ARM64 OpenHarmony
 `aarch64-unknown-none-softfloat` | * | Bare ARM64, softfloat
 `aarch64-unknown-none` | * | Bare ARM64, hardfloat
-[`aarch64-unknown-uefi`](platform-support/unknown-uefi.md) | * | ARM64 UEFI
+[`aarch64-unknown-uefi`](platform-support/unknown-uefi.md) | ? | ARM64 UEFI
 [`arm-linux-androideabi`](platform-support/android.md) | ✓ | ARMv6 Android
 `arm-unknown-linux-musleabi` | ✓ | ARMv6 Linux with musl 1.2.3
 `arm-unknown-linux-musleabihf` | ✓ | ARMv6 Linux with musl 1.2.3, hardfloat
@@ -168,7 +163,7 @@ target | std | notes
 [`i686-linux-android`](platform-support/android.md) | ✓ | 32-bit x86 Android [^x86_32-floats-return-ABI]
 `i686-unknown-freebsd` | ✓ | 32-bit FreeBSD [^x86_32-floats-return-ABI]
 `i686-unknown-linux-musl` | ✓ | 32-bit Linux with musl 1.2.3 [^x86_32-floats-return-ABI]
-[`i686-unknown-uefi`](platform-support/unknown-uefi.md) | * | 32-bit UEFI
+[`i686-unknown-uefi`](platform-support/unknown-uefi.md) | ? | 32-bit UEFI
 [`loongarch64-unknown-none`](platform-support/loongarch-none.md) | * |  | LoongArch64 Bare-metal (LP64D ABI)
 [`loongarch64-unknown-none-softfloat`](platform-support/loongarch-none.md) | * |  | LoongArch64 Bare-metal (LP64S ABI)
 [`nvptx64-nvidia-cuda`](platform-support/nvptx64-nvidia-cuda.md) | * | --emit=asm generates PTX code that [runs on NVIDIA GPUs]
@@ -194,7 +189,7 @@ target | std | notes
 `wasm32-unknown-unknown` | ✓ | WebAssembly
 `wasm32-wasi` | ✓ | WebAssembly with WASI (undergoing a [rename to `wasm32-wasip1`][wasi-rename])
 [`wasm32-wasip1`](platform-support/wasm32-wasip1.md) | ✓ | WebAssembly with WASI
-[`wasm32-wasi-preview1-threads`](platform-support/wasm32-wasi-preview1-threads.md) | ✓ |  | WebAssembly with WASI Preview 1 and threads
+[`wasm32-wasip1-threads`](platform-support/wasm32-wasip1-threads.md) | ✓ |  | WebAssembly with WASI Preview 1 and threads
 `x86_64-apple-ios` | ✓ | 64-bit x86 iOS
 [`x86_64-fortanix-unknown-sgx`](platform-support/x86_64-fortanix-unknown-sgx.md) | ✓ | [Fortanix ABI] for 64-bit Intel SGX
 `x86_64-fuchsia` | ✓ | Alias for `x86_64-unknown-fuchsia`
@@ -205,7 +200,7 @@ target | std | notes
 [`x86_64-unknown-linux-ohos`](platform-support/openharmony.md) | ✓ | x86_64 OpenHarmony
 [`x86_64-unknown-none`](platform-support/x86_64-unknown-none.md) | * | Freestanding/bare-metal x86_64, softfloat
 `x86_64-unknown-redox` | ✓ | Redox OS
-[`x86_64-unknown-uefi`](platform-support/unknown-uefi.md) | * | 64-bit UEFI
+[`x86_64-unknown-uefi`](platform-support/unknown-uefi.md) | ? | 64-bit UEFI
 
 [^x86_32-floats-x87]: Floating-point support on `i586` targets is non-compliant: the `x87` registers and instructions used for these targets do not provide IEEE-754-compliant behavior, in particular when it comes to rounding and NaN payload bits. See [issue #114479][x86-32-float-issue].
 [wasi-rename]: https://github.com/rust-lang/compiler-team/issues/607
@@ -241,6 +236,7 @@ target | std | host | notes
 -------|:---:|:----:|-------
 [`arm64e-apple-ios`](platform-support/arm64e-apple-ios.md) | ✓ | | ARM64e Apple iOS
 [`arm64e-apple-darwin`](platform-support/arm64e-apple-darwin.md)  | ✓ | ✓ | ARM64e Apple Darwin
+[`arm64ec-pc-windows-msvc`](platform-support/arm64ec-pc-windows-msvc.md) | ? | | Arm64EC Windows MSVC
 `aarch64-apple-ios-macabi` | ? |  | Apple Catalyst on ARM64
 [`aarch64-apple-tvos`](platform-support/apple-tvos.md) | ? |  | ARM64 tvOS
 [`aarch64-apple-tvos-sim`](platform-support/apple-tvos.md) | ? |  | ARM64 tvOS Simulator
@@ -295,7 +291,6 @@ target | std | host | notes
 [`i586-pc-nto-qnx700`](platform-support/nto-qnx.md) | * |  | 32-bit x86 QNX Neutrino 7.0 RTOS  [^x86_32-floats-return-ABI]
 [`i586-unknown-netbsd`](platform-support/netbsd.md) | ✓ |  | 32-bit x86, restricted to Pentium
 `i686-apple-darwin` | ✓ | ✓ | 32-bit macOS (10.12+, Sierra+) [^x86_32-floats-return-ABI]
-`i686-pc-windows-msvc` | * |  | 32-bit Windows XP support [^x86_32-floats-return-ABI]
 [`i686-pc-windows-gnullvm`](platform-support/pc-windows-gnullvm.md) | ✓ | ✓ | [^x86_32-floats-return-ABI]
 `i686-unknown-haiku` | ✓ | ✓ | 32-bit Haiku [^x86_32-floats-return-ABI]
 [`i686-unknown-hurd-gnu`](platform-support/hurd.md) | ✓ | ✓ | 32-bit GNU/Hurd [^x86_32-floats-return-ABI]
@@ -305,6 +300,7 @@ target | std | host | notes
 `i686-uwp-windows-msvc` | ? |  | [^x86_32-floats-return-ABI]
 [`i686-win7-windows-msvc`](platform-support/win7-windows-msvc.md) | ✓ |   | 32-bit Windows 7 support [^x86_32-floats-return-ABI]
 `i686-wrs-vxworks` | ? |  | [^x86_32-floats-return-ABI]
+[`loongarch64-unknown-linux-musl`](platform-support/loongarch-linux.md) | ? |  | LoongArch64 Linux (LP64D ABI) with musl 1.2.3
 [`m68k-unknown-linux-gnu`](platform-support/m68k-unknown-linux-gnu.md) | ? |  | Motorola 680x0 Linux
 `mips-unknown-linux-gnu` | ✓ | ✓ | MIPS Linux (kernel 4.4, glibc 2.23)
 `mips-unknown-linux-musl` | ✓ |  | MIPS Linux with musl 1.2.3
@@ -371,7 +367,6 @@ target | std | host | notes
 [`x86_64-apple-watchos-sim`](platform-support/apple-watchos.md) | ✓ |  | x86 64-bit Apple WatchOS simulator
 [`x86_64-pc-nto-qnx710`](platform-support/nto-qnx.md) | ✓ |  | x86 64-bit QNX Neutrino 7.1 RTOS |
 [`x86_64-pc-windows-gnullvm`](platform-support/pc-windows-gnullvm.md) | ✓ | ✓ |
-`x86_64-pc-windows-msvc` | * |  | 64-bit Windows XP support
 [`x86_64-unikraft-linux-musl`](platform-support/unikraft-linux-musl.md) | ✓ |   | 64-bit Unikraft with musl 1.2.3
 `x86_64-unknown-dragonfly` | ✓ | ✓ | 64-bit DragonFlyBSD
 `x86_64-unknown-haiku` | ✓ | ✓ | 64-bit Haiku

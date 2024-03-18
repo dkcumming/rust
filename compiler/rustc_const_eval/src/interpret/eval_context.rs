@@ -108,7 +108,7 @@ pub struct Frame<'mir, 'tcx, Prov: Provenance = CtfeProvenance, Extra = ()> {
 
     /// The location where the result of the current stack frame should be written to,
     /// and its layout in the caller.
-    pub return_place: PlaceTy<'tcx, Prov>,
+    pub return_place: MPlaceTy<'tcx, Prov>,
 
     /// The list of locals for this stack frame, stored in order as
     /// `[return_ptr, arguments..., variables..., temporaries...]`.
@@ -220,9 +220,6 @@ impl<'tcx, Prov: Provenance> LocalState<'tcx, Prov> {
 
     /// Overwrite the local. If the local can be overwritten in place, return a reference
     /// to do so; otherwise return the `MemPlace` to consult instead.
-    ///
-    /// Note: Before calling this, call the `before_access_local_mut` machine hook! You may be
-    /// invalidating machine invariants otherwise!
     #[inline(always)]
     pub(super) fn access_mut(&mut self) -> InterpResult<'tcx, &mut Operand<Prov>> {
         match &mut self.value {
@@ -278,6 +275,39 @@ impl<'mir, 'tcx, Prov: Provenance, Extra> Frame<'mir, 'tcx, Prov, Extra> {
                 mir::ClearCrossCrate::Clear => None,
             }
         })
+    }
+
+    /// Returns the address of the buffer where the locals are stored. This is used by `Place` as a
+    /// sanity check to detect bugs where we mix up which stack frame a place refers to.
+    #[inline(always)]
+    pub(super) fn locals_addr(&self) -> usize {
+        self.locals.raw.as_ptr().addr()
+    }
+
+    #[must_use]
+    pub fn generate_stacktrace_from_stack(stack: &[Self]) -> Vec<FrameInfo<'tcx>> {
+        let mut frames = Vec::new();
+        // This deliberately does *not* honor `requires_caller_location` since it is used for much
+        // more than just panics.
+        for frame in stack.iter().rev() {
+            let span = match frame.loc {
+                Left(loc) => {
+                    // If the stacktrace passes through MIR-inlined source scopes, add them.
+                    let mir::SourceInfo { mut span, scope } = *frame.body.source_info(loc);
+                    let mut scope_data = &frame.body.source_scopes[scope];
+                    while let Some((instance, call_span)) = scope_data.inlined {
+                        frames.push(FrameInfo { span, instance });
+                        span = call_span;
+                        scope_data = &frame.body.source_scopes[scope_data.parent_scope.unwrap()];
+                    }
+                    span
+                }
+                Right(span) => span,
+            };
+            frames.push(FrameInfo { span, instance: frame.instance });
+        }
+        trace!("generate stacktrace: {:#?}", frames);
+        frames
     }
 }
 
@@ -645,7 +675,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     }
 
     #[inline(always)]
-    pub fn layout_of_local(
+    pub(super) fn layout_of_local(
         &self,
         frame: &Frame<'mir, 'tcx, M::Provenance, M::FrameExtra>,
         local: mir::Local,
@@ -771,7 +801,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         &mut self,
         instance: ty::Instance<'tcx>,
         body: &'mir mir::Body<'tcx>,
-        return_place: &PlaceTy<'tcx, M::Provenance>,
+        return_place: &MPlaceTy<'tcx, M::Provenance>,
         return_to_block: StackPopCleanup,
     ) -> InterpResult<'tcx> {
         trace!("body: {:#?}", body);
@@ -896,7 +926,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
         // Copy return value. Must of course happen *before* we deallocate the locals.
         let copy_ret_result = if !unwinding {
             let op = self
-                .local_to_op(self.frame(), mir::RETURN_PLACE, None)
+                .local_to_op(mir::RETURN_PLACE, None)
                 .expect("return place should always be live");
             let dest = self.frame().return_place.clone();
             let err = if self.stack().len() == 1 {
@@ -912,7 +942,7 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
             } else {
                 self.copy_op_allow_transmute(&op, &dest)
             };
-            trace!("return value: {:?}", self.dump_place(&dest));
+            trace!("return value: {:?}", self.dump_place(&dest.into()));
             // We delay actually short-circuiting on this error until *after* the stack frame is
             // popped, since we want this error to be attributed to the caller, whose type defines
             // this transmute.
@@ -1167,36 +1197,8 @@ impl<'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> InterpCx<'mir, 'tcx, M> {
     }
 
     #[must_use]
-    pub fn generate_stacktrace_from_stack(
-        stack: &[Frame<'mir, 'tcx, M::Provenance, M::FrameExtra>],
-    ) -> Vec<FrameInfo<'tcx>> {
-        let mut frames = Vec::new();
-        // This deliberately does *not* honor `requires_caller_location` since it is used for much
-        // more than just panics.
-        for frame in stack.iter().rev() {
-            let span = match frame.loc {
-                Left(loc) => {
-                    // If the stacktrace passes through MIR-inlined source scopes, add them.
-                    let mir::SourceInfo { mut span, scope } = *frame.body.source_info(loc);
-                    let mut scope_data = &frame.body.source_scopes[scope];
-                    while let Some((instance, call_span)) = scope_data.inlined {
-                        frames.push(FrameInfo { span, instance });
-                        span = call_span;
-                        scope_data = &frame.body.source_scopes[scope_data.parent_scope.unwrap()];
-                    }
-                    span
-                }
-                Right(span) => span,
-            };
-            frames.push(FrameInfo { span, instance: frame.instance });
-        }
-        trace!("generate stacktrace: {:#?}", frames);
-        frames
-    }
-
-    #[must_use]
     pub fn generate_stacktrace(&self) -> Vec<FrameInfo<'tcx>> {
-        Self::generate_stacktrace_from_stack(self.stack())
+        Frame::generate_stacktrace_from_stack(self.stack())
     }
 }
 
@@ -1212,18 +1214,16 @@ impl<'a, 'mir, 'tcx: 'mir, M: Machine<'mir, 'tcx>> std::fmt::Debug
 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.place {
-            Place::Local { frame, local, offset } => {
+            Place::Local { local, offset, locals_addr } => {
+                debug_assert_eq!(locals_addr, self.ecx.frame().locals_addr());
                 let mut allocs = Vec::new();
                 write!(fmt, "{local:?}")?;
                 if let Some(offset) = offset {
                     write!(fmt, "+{:#x}", offset.bytes())?;
                 }
-                if frame != self.ecx.frame_idx() {
-                    write!(fmt, " ({} frames up)", self.ecx.frame_idx() - frame)?;
-                }
                 write!(fmt, ":")?;
 
-                match self.ecx.stack()[frame].locals[local].value {
+                match self.ecx.frame().locals[local].value {
                     LocalValue::Dead => write!(fmt, " is dead")?,
                     LocalValue::Live(Operand::Immediate(Immediate::Uninit)) => {
                         write!(fmt, " is uninitialized")?

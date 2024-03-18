@@ -1,6 +1,7 @@
 #![allow(rustc::diagnostic_outside_of_impl)]
 #![allow(rustc::untranslatable_diagnostic)]
 
+use core::ops::ControlFlow;
 use hir::ExprKind;
 use rustc_errors::{Applicability, Diag};
 use rustc_hir as hir;
@@ -557,7 +558,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                     hir::intravisit::walk_stmt(self, stmt);
                     let expr = match stmt.kind {
                         hir::StmtKind::Semi(expr) | hir::StmtKind::Expr(expr) => expr,
-                        hir::StmtKind::Local(hir::Local { init: Some(expr), .. }) => expr,
+                        hir::StmtKind::Let(hir::Local { init: Some(expr), .. }) => expr,
                         _ => {
                             return;
                         }
@@ -671,11 +672,8 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
         };
         (
             true,
-            td.as_local().and_then(|tld| match self.infcx.tcx.opt_hir_node_by_def_id(tld) {
-                Some(Node::Item(hir::Item {
-                    kind: hir::ItemKind::Trait(_, _, _, _, items),
-                    ..
-                })) => {
+            td.as_local().and_then(|tld| match self.infcx.tcx.hir_node_by_def_id(tld) {
+                Node::Item(hir::Item { kind: hir::ItemKind::Trait(_, _, _, _, items), .. }) => {
                     let mut f_in_trait_opt = None;
                     for hir::TraitItemRef { id: fi, kind: k, .. } in *items {
                         let hi = fi.hir_id();
@@ -727,30 +725,12 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             _ => local_decl.source_info.span,
         };
 
-        struct BindingFinder {
-            span: Span,
-            hir_id: Option<hir::HirId>,
-        }
-
-        impl<'tcx> Visitor<'tcx> for BindingFinder {
-            fn visit_stmt(&mut self, s: &'tcx hir::Stmt<'tcx>) {
-                if let hir::StmtKind::Local(local) = s.kind {
-                    if local.pat.span == self.span {
-                        self.hir_id = Some(local.hir_id);
-                    }
-                }
-                hir::intravisit::walk_stmt(self, s);
-            }
-        }
-
         let def_id = self.body.source.def_id();
         let hir_id = if let Some(local_def_id) = def_id.as_local()
             && let Some(body_id) = self.infcx.tcx.hir().maybe_body_owned_by(local_def_id)
         {
             let body = self.infcx.tcx.hir().body(body_id);
-            let mut v = BindingFinder { span: pat_span, hir_id: None };
-            v.visit_body(body);
-            v.hir_id
+            BindingFinder { span: pat_span }.visit_body(body).break_value()
         } else {
             None
         };
@@ -859,17 +839,18 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
         };
 
         let hir_map = self.infcx.tcx.hir();
-        struct Finder<'tcx> {
+        struct Finder {
             span: Span,
-            expr: Option<&'tcx Expr<'tcx>>,
         }
 
-        impl<'tcx> Visitor<'tcx> for Finder<'tcx> {
-            fn visit_expr(&mut self, e: &'tcx hir::Expr<'tcx>) {
-                if e.span == self.span && self.expr.is_none() {
-                    self.expr = Some(e);
+        impl<'tcx> Visitor<'tcx> for Finder {
+            type Result = ControlFlow<&'tcx Expr<'tcx>>;
+            fn visit_expr(&mut self, e: &'tcx hir::Expr<'tcx>) -> Self::Result {
+                if e.span == self.span {
+                    ControlFlow::Break(e)
+                } else {
+                    hir::intravisit::walk_expr(self, e)
                 }
-                hir::intravisit::walk_expr(self, e);
             }
         }
         if let Some(body_id) = hir_map.maybe_body_owned_by(self.mir_def_id())
@@ -878,9 +859,7 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
             // `span` corresponds to the expression being iterated, find the `for`-loop desugared
             // expression with that span in order to identify potential fixes when encountering a
             // read-only iterator that should be mutable.
-            let mut v = Finder { span, expr: None };
-            v.visit_block(block);
-            if let Some(expr) = v.expr
+            if let ControlFlow::Break(expr) = (Finder { span }).visit_block(block)
                 && let Call(_, [expr]) = expr.kind
             {
                 match expr.kind {
@@ -1179,29 +1158,12 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                 );
             }
             Some((false, err_label_span, message)) => {
-                struct BindingFinder {
-                    span: Span,
-                    hir_id: Option<hir::HirId>,
-                }
-
-                impl<'tcx> Visitor<'tcx> for BindingFinder {
-                    fn visit_stmt(&mut self, s: &'tcx hir::Stmt<'tcx>) {
-                        if let hir::StmtKind::Local(local) = s.kind {
-                            if local.pat.span == self.span {
-                                self.hir_id = Some(local.hir_id);
-                            }
-                        }
-                        hir::intravisit::walk_stmt(self, s);
-                    }
-                }
                 let def_id = self.body.source.def_id();
                 let hir_id = if let Some(local_def_id) = def_id.as_local()
                     && let Some(body_id) = self.infcx.tcx.hir().maybe_body_owned_by(local_def_id)
                 {
                     let body = self.infcx.tcx.hir().body(body_id);
-                    let mut v = BindingFinder { span: err_label_span, hir_id: None };
-                    v.visit_body(body);
-                    v.hir_id
+                    BindingFinder { span: err_label_span }.visit_body(body).break_value()
                 } else {
                     None
                 };
@@ -1329,6 +1291,23 @@ impl<'a, 'tcx> MirBorrowckCtxt<'a, 'tcx> {
                 }
             }
             None => {}
+        }
+    }
+}
+
+struct BindingFinder {
+    span: Span,
+}
+
+impl<'tcx> Visitor<'tcx> for BindingFinder {
+    type Result = ControlFlow<hir::HirId>;
+    fn visit_stmt(&mut self, s: &'tcx hir::Stmt<'tcx>) -> Self::Result {
+        if let hir::StmtKind::Let(local) = s.kind
+            && local.pat.span == self.span
+        {
+            ControlFlow::Break(local.hir_id)
+        } else {
+            hir::intravisit::walk_stmt(self, s)
         }
     }
 }
@@ -1493,11 +1472,9 @@ fn get_mut_span_in_struct_field<'tcx>(
     if let ty::Ref(_, ty, _) = ty.kind()
         && let ty::Adt(def, _) = ty.kind()
         && let field = def.all_fields().nth(field.index())?
-        // Use the HIR types to construct the diagnostic message.
-        && let node = tcx.opt_hir_node_by_def_id(field.did.as_local()?)?
         // Now we're dealing with the actual struct that we're going to suggest a change to,
         // we can expect a field that is an immutable reference to a type.
-        && let hir::Node::Field(field) = node
+        && let hir::Node::Field(field) = tcx.hir_node_by_def_id(field.did.as_local()?)
         && let hir::TyKind::Ref(lt, hir::MutTy { mutbl: hir::Mutability::Not, ty }) = field.ty.kind
     {
         return Some(lt.ident.span.between(ty.span));

@@ -23,18 +23,19 @@
 //  - `check_unused` finally emits the diagnostics based on the data generated
 //    in the last step
 
-use crate::imports::ImportKind;
+use crate::imports::{Import, ImportKind};
 use crate::module_to_string;
 use crate::Resolver;
 
-use crate::NameBindingKind;
+use crate::{LexicalScopeBinding, NameBindingKind};
 use rustc_ast as ast;
 use rustc_ast::visit::{self, Visitor};
 use rustc_data_structures::fx::{FxHashMap, FxIndexMap, FxIndexSet};
 use rustc_data_structures::unord::UnordSet;
 use rustc_errors::{pluralize, MultiSpan};
 use rustc_hir::def::{DefKind, Res};
-use rustc_session::lint::builtin::{MACRO_USE_EXTERN_CRATE, UNUSED_EXTERN_CRATES, UNUSED_IMPORTS};
+use rustc_session::lint::builtin::{MACRO_USE_EXTERN_CRATE, UNUSED_EXTERN_CRATES};
+use rustc_session::lint::builtin::{UNUSED_IMPORTS, UNUSED_QUALIFICATIONS};
 use rustc_session::lint::BuiltinLintDiag;
 use rustc_span::symbol::{kw, Ident};
 use rustc_span::{Span, DUMMY_SP};
@@ -135,6 +136,81 @@ impl<'a, 'b, 'tcx> UnusedImportCheckVisitor<'a, 'b, 'tcx> {
     fn check_imports_as_underscore(&mut self, items: &[(ast::UseTree, ast::NodeId)]) {
         for (item, id) in items {
             self.check_import_as_underscore(item, *id);
+        }
+    }
+
+    fn report_unused_extern_crate_items(
+        &mut self,
+        maybe_unused_extern_crates: FxHashMap<ast::NodeId, Span>,
+    ) {
+        let tcx = self.r.tcx();
+        for extern_crate in &self.extern_crate_items {
+            let warn_if_unused = !extern_crate.ident.name.as_str().starts_with('_');
+
+            // If the crate is fully unused, we suggest removing it altogether.
+            // We do this in any edition.
+            if warn_if_unused {
+                if let Some(&span) = maybe_unused_extern_crates.get(&extern_crate.id) {
+                    self.r.lint_buffer.buffer_lint_with_diagnostic(
+                        UNUSED_EXTERN_CRATES,
+                        extern_crate.id,
+                        span,
+                        "unused extern crate",
+                        BuiltinLintDiag::UnusedExternCrate {
+                            removal_span: extern_crate.span_with_attributes,
+                        },
+                    );
+                    continue;
+                }
+            }
+
+            // If we are not in Rust 2018 edition, then we don't make any further
+            // suggestions.
+            if !tcx.sess.at_least_rust_2018() {
+                continue;
+            }
+
+            // If the extern crate has any attributes, they may have funky
+            // semantics we can't faithfully represent using `use` (most
+            // notably `#[macro_use]`). Ignore it.
+            if extern_crate.has_attrs {
+                continue;
+            }
+
+            // If the extern crate is renamed, then we cannot suggest replacing it with a use as this
+            // would not insert the new name into the prelude, where other imports in the crate may be
+            // expecting it.
+            if extern_crate.renames {
+                continue;
+            }
+
+            // If the extern crate isn't in the extern prelude,
+            // there is no way it can be written as a `use`.
+            if !self
+                .r
+                .extern_prelude
+                .get(&extern_crate.ident)
+                .is_some_and(|entry| !entry.introduced_by_item)
+            {
+                continue;
+            }
+
+            let vis_span = extern_crate
+                .vis_span
+                .find_ancestor_inside(extern_crate.span)
+                .unwrap_or(extern_crate.vis_span);
+            let ident_span = extern_crate
+                .ident
+                .span
+                .find_ancestor_inside(extern_crate.span)
+                .unwrap_or(extern_crate.ident.span);
+            self.r.lint_buffer.buffer_lint_with_diagnostic(
+                UNUSED_EXTERN_CRATES,
+                extern_crate.id,
+                extern_crate.span,
+                "`extern crate` is not idiomatic in the new edition",
+                BuiltinLintDiag::ExternCrateNotIdiomatic { vis_span, ident_span },
+            );
         }
     }
 }
@@ -335,6 +411,8 @@ impl Resolver<'_, '_> {
         };
         visit::walk_crate(&mut visitor, krate);
 
+        visitor.report_unused_extern_crate_items(maybe_unused_extern_crates);
+
         for unused in visitor.unused_imports.values() {
             let mut fixes = Vec::new();
             let spans = match calc_unused_spans(unused, &unused.use_tree, unused.use_tree_id) {
@@ -416,75 +494,6 @@ impl Resolver<'_, '_> {
             );
         }
 
-        for extern_crate in visitor.extern_crate_items {
-            let warn_if_unused = !extern_crate.ident.name.as_str().starts_with('_');
-
-            // If the crate is fully unused, we suggest removing it altogether.
-            // We do this in any edition.
-            if warn_if_unused {
-                if let Some(&span) = maybe_unused_extern_crates.get(&extern_crate.id) {
-                    visitor.r.lint_buffer.buffer_lint_with_diagnostic(
-                        UNUSED_EXTERN_CRATES,
-                        extern_crate.id,
-                        span,
-                        "unused extern crate",
-                        BuiltinLintDiag::UnusedExternCrate {
-                            removal_span: extern_crate.span_with_attributes,
-                        },
-                    );
-                    continue;
-                }
-            }
-
-            // If we are not in Rust 2018 edition, then we don't make any further
-            // suggestions.
-            if !tcx.sess.at_least_rust_2018() {
-                continue;
-            }
-
-            // If the extern crate has any attributes, they may have funky
-            // semantics we can't faithfully represent using `use` (most
-            // notably `#[macro_use]`). Ignore it.
-            if extern_crate.has_attrs {
-                continue;
-            }
-
-            // If the extern crate is renamed, then we cannot suggest replacing it with a use as this
-            // would not insert the new name into the prelude, where other imports in the crate may be
-            // expecting it.
-            if extern_crate.renames {
-                continue;
-            }
-
-            // If the extern crate isn't in the extern prelude,
-            // there is no way it can be written as a `use`.
-            if !visitor
-                .r
-                .extern_prelude
-                .get(&extern_crate.ident)
-                .is_some_and(|entry| !entry.introduced_by_item)
-            {
-                continue;
-            }
-
-            let vis_span = extern_crate
-                .vis_span
-                .find_ancestor_inside(extern_crate.span)
-                .unwrap_or(extern_crate.vis_span);
-            let ident_span = extern_crate
-                .ident
-                .span
-                .find_ancestor_inside(extern_crate.span)
-                .unwrap_or(extern_crate.ident.span);
-            visitor.r.lint_buffer.buffer_lint_with_diagnostic(
-                UNUSED_EXTERN_CRATES,
-                extern_crate.id,
-                extern_crate.span,
-                "`extern crate` is not idiomatic in the new edition",
-                BuiltinLintDiag::ExternCrateNotIdiomatic { vis_span, ident_span },
-            );
-        }
-
         let unused_imports = visitor.unused_imports;
         let mut check_redundant_imports = FxIndexSet::default();
         for module in self.arenas.local_modules().iter() {
@@ -506,8 +515,59 @@ impl Resolver<'_, '_> {
             }
         }
 
+        let mut redundant_imports = UnordSet::default();
         for import in check_redundant_imports {
-            self.check_for_redundant_imports(import);
+            if self.check_for_redundant_imports(import)
+                && let Some(id) = import.id()
+            {
+                redundant_imports.insert(id);
+            }
+        }
+
+        // The lint fixes for unused_import and unnecessary_qualification may conflict.
+        // Deleting both unused imports and unnecessary segments of an item may result
+        // in the item not being found.
+        for unn_qua in &self.potentially_unnecessary_qualifications {
+            if let LexicalScopeBinding::Item(name_binding) = unn_qua.binding
+                && let NameBindingKind::Import { import, .. } = name_binding.kind
+                && (is_unused_import(import, &unused_imports)
+                    || is_redundant_import(import, &redundant_imports))
+            {
+                continue;
+            }
+
+            self.lint_buffer.buffer_lint_with_diagnostic(
+                UNUSED_QUALIFICATIONS,
+                unn_qua.node_id,
+                unn_qua.path_span,
+                "unnecessary qualification",
+                BuiltinLintDiag::UnusedQualifications { removal_span: unn_qua.removal_span },
+            );
+        }
+
+        fn is_redundant_import(
+            import: Import<'_>,
+            redundant_imports: &UnordSet<ast::NodeId>,
+        ) -> bool {
+            if let Some(id) = import.id()
+                && redundant_imports.contains(&id)
+            {
+                return true;
+            }
+            false
+        }
+
+        fn is_unused_import(
+            import: Import<'_>,
+            unused_imports: &FxIndexMap<ast::NodeId, UnusedImport>,
+        ) -> bool {
+            if let Some(unused_import) = unused_imports.get(&import.root_id)
+                && let Some(id) = import.id()
+                && unused_import.unused.contains(&id)
+            {
+                return true;
+            }
+            false
         }
     }
 }

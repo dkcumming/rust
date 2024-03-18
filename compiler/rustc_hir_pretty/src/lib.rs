@@ -121,6 +121,7 @@ impl<'a> State<'a> {
                 self.print_bounds(":", pred.bounds);
             }
             Node::ArrayLenInfer(_) => self.word("_"),
+            Node::AssocOpaqueTy(..) => unreachable!(),
             Node::Err(_) => self.word("/*ERROR*/"),
         }
     }
@@ -863,7 +864,7 @@ impl<'a> State<'a> {
     fn print_stmt(&mut self, st: &hir::Stmt<'_>) {
         self.maybe_print_comment(st.span.lo());
         match st.kind {
-            hir::StmtKind::Local(loc) => {
+            hir::StmtKind::Let(loc) => {
                 self.print_local(loc.init, loc.els, |this| this.print_local_decl(loc));
             }
             hir::StmtKind::Item(item) => self.ann.nested(self, Nested::Item(item)),
@@ -1264,6 +1265,10 @@ impl<'a> State<'a> {
                     s.word("sym_static");
                     s.space();
                     s.print_qpath(path, true);
+                }
+                hir::InlineAsmOperand::Label { block } => {
+                    s.head("label");
+                    s.print_block(block);
                 }
             },
             AsmArg::Options(opts) => {
@@ -2302,7 +2307,7 @@ fn expr_requires_semi_to_be_stmt(e: &hir::Expr<'_>) -> bool {
 /// seen the semicolon, and thus don't need another.
 fn stmt_ends_with_semi(stmt: &hir::StmtKind<'_>) -> bool {
     match *stmt {
-        hir::StmtKind::Local(_) => true,
+        hir::StmtKind::Let(_) => true,
         hir::StmtKind::Item(_) => false,
         hir::StmtKind::Expr(e) => expr_requires_semi_to_be_stmt(e),
         hir::StmtKind::Semi(..) => false,

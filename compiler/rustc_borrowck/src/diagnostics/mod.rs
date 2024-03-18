@@ -76,6 +76,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
     /// LL |         for (key, value) in dict {
     ///    |                             ^^^^
     /// ```
+    #[allow(rustc::diagnostic_outside_of_impl)] // FIXME
     pub(super) fn add_moved_or_invoked_closure_note(
         &self,
         location: Location,
@@ -585,6 +586,7 @@ impl UseSpans<'_> {
     }
 
     /// Add a span label to the arguments of the closure, if it exists.
+    #[allow(rustc::diagnostic_outside_of_impl)]
     pub(super) fn args_subdiag(
         self,
         dcx: &rustc_errors::DiagCtxt,
@@ -598,6 +600,7 @@ impl UseSpans<'_> {
 
     /// Add a span label to the use of the captured variable, if it exists.
     /// only adds label to the `path_span`
+    #[allow(rustc::diagnostic_outside_of_impl)]
     pub(super) fn var_path_only_subdiag(
         self,
         dcx: &rustc_errors::DiagCtxt,
@@ -635,6 +638,7 @@ impl UseSpans<'_> {
     }
 
     /// Add a subdiagnostic to the use of the captured variable, if it exists.
+    #[allow(rustc::diagnostic_outside_of_impl)]
     pub(super) fn var_subdiag(
         self,
         dcx: &rustc_errors::DiagCtxt,
@@ -1008,6 +1012,8 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
         self.borrow_spans(span, borrow.reserve_location)
     }
 
+    #[allow(rustc::diagnostic_outside_of_impl)]
+    #[allow(rustc::untranslatable_diagnostic)] // FIXME: make this translatable
     fn explain_captures(
         &mut self,
         err: &mut Diag<'_>,
@@ -1044,7 +1050,7 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                     );
                     err.subdiagnostic(self.dcx(), CaptureReasonNote::FnOnceMoveInCall { var_span });
                 }
-                CallKind::Operator { self_arg, .. } => {
+                CallKind::Operator { self_arg, trait_id, .. } => {
                     let self_arg = self_arg.unwrap();
                     err.subdiagnostic(
                         self.dcx(),
@@ -1056,9 +1062,16 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                         },
                     );
                     if self.fn_self_span_reported.insert(fn_span) {
+                        let lang = self.infcx.tcx.lang_items();
                         err.subdiagnostic(
                             self.dcx(),
-                            CaptureReasonNote::LhsMoveByOperator { span: self_arg.span },
+                            if [lang.not_trait(), lang.deref_trait(), lang.neg_trait()]
+                                .contains(&Some(trait_id))
+                            {
+                                CaptureReasonNote::UnOpMoveByOperator { span: self_arg.span }
+                            } else {
+                                CaptureReasonNote::LhsMoveByOperator { span: self_arg.span }
+                            },
                         );
                     }
                 }
@@ -1220,20 +1233,20 @@ impl<'cx, 'tcx> MirBorrowckCtxt<'cx, 'tcx> {
                             {
                                 let msg = match &errors[..] {
                                     [] => "you can `clone` the value and consume it, but this \
-                                            might not be your desired behavior"
+                                           might not be your desired behavior"
                                         .to_string(),
                                     [error] => {
                                         format!(
-                                            "you could `clone` the value and consume it, if \
-                                                the `{}` trait bound could be satisfied",
+                                            "you could `clone` the value and consume it, if the \
+                                             `{}` trait bound could be satisfied",
                                             error.obligation.predicate,
                                         )
                                     }
                                     [errors @ .., last] => {
                                         format!(
-                                            "you could `clone` the value and consume it, if \
-                                                the following trait bounds could be satisfied: {} \
-                                                and `{}`",
+                                            "you could `clone` the value and consume it, if the \
+                                             following trait bounds could be satisfied: \
+                                             {} and `{}`",
                                             errors
                                                 .iter()
                                                 .map(|e| format!("`{}`", e.obligation.predicate))
