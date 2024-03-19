@@ -22,6 +22,7 @@ extern crate scoped_tls;
 use std::fmt;
 use std::fmt::Debug;
 use std::io;
+use rustc_data_structures::fx::FxHashMap;
 
 use crate::compiler_interface::with;
 pub use crate::crate_def::CrateDef;
@@ -183,6 +184,10 @@ pub fn all_local_items() -> CrateItems {
 
 pub fn has_promoted(crate_item: CrateItem) -> bool {
     with(|cx| cx.has_promoted(crate_item.0))
+}
+
+pub fn get_all_promoted() -> FxHashMap<DefId, Vec<Body>> {
+    with(|cx| cx.get_all_promoted())
 }
 
 pub fn all_trait_decls() -> TraitDecls {

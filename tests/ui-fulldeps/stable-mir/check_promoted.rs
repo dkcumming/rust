@@ -1,5 +1,5 @@
 //@ run-pass
-//! Test that item kind works as expected.
+//! Test that has_promoted and get_all_promoted works as expected.
 
 //@ ignore-stage1
 //@ ignore-cross-compile
@@ -18,7 +18,10 @@ extern crate rustc_interface;
 extern crate stable_mir;
 
 use rustc_smir::rustc_internal;
-// use stable_mir::*;
+use stable_mir::mir::StatementKind::Assign;
+use stable_mir::mir::Rvalue::Use;
+use stable_mir::mir::Operand::Constant;
+use stable_mir::ty::ConstantKind::Allocated;
 use std::io::Write;
 use std::ops::ControlFlow;
 
@@ -27,9 +30,25 @@ const CRATE_NAME: &str = "input";
 /// This function uses the Stable MIR APIs to get information about the test crate.
 fn test_promoted() -> ControlFlow<()> {
     let items = stable_mir::all_local_items();
-    assert!(items.len() == 1);
 
-    assert!(stable_mir::has_promoted(items[0]));
+    // One promoted item
+    assert!(stable_mir::has_promoted(items[1]));
+    let promoted = &stable_mir::get_all_promoted()[&items[1].0];
+
+    
+    // Only 1 BB in promoted
+    let promoted_body = &promoted[0];
+    assert!(promoted_body.blocks.len() == 1);
+
+    let bb = &promoted_body.blocks[0];
+    let first_statement = &bb.statements[0];
+
+    // First statement assigns the constant to a place, confirm it is 42
+    let Assign(_place, rvalue) = &first_statement.kind else { unreachable!() };
+    let Use(operand) = &rvalue else { unreachable!() };
+    let Constant(constant) = &operand else { unreachable!() };
+    let Allocated(allocation) = &constant.literal.kind() else { unreachable!() };
+    assert!(allocation.read_uint().unwrap() == 42);
 
     ControlFlow::Continue(())
 }
@@ -57,8 +76,8 @@ fn generate_input(path: &str) -> std::io::Result<()> {
     write!(
         file,
         r#"
-        pub fn abcd() {{
-            println!("HELLO, WORLD!");
+        pub fn main() {{
+            const _X:&u32 = &(42);
         }}
         "#
     )?;
