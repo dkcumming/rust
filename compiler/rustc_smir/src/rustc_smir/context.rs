@@ -29,7 +29,6 @@ use stable_mir::ty::{
 use stable_mir::{Crate, CrateDef, CrateItem, CrateNum, DefId, Error, Filename, ItemKind, Symbol};
 use std::cell::RefCell;
 use std::iter;
-use rustc_data_structures::fx::FxHashMap;
 
 use crate::rustc_internal::RustcInternal;
 use crate::rustc_smir::builder::BodyBuilder;
@@ -67,32 +66,6 @@ impl<'tcx> Context for TablesWrapper<'tcx> {
         let tables = self.0.borrow();
         let def_id = tables[def];
         tables.tcx.is_mir_available(def_id)
-    }
-
-    fn has_promoted(&self, def: DefId) -> bool {
-        let tables = self.0.borrow();
-        let def_id = tables[def];
-        tables.has_promoted(def_id)
-    }
-
-    // Pseudo
-    fn get_all_promoted(&self) -> FxHashMap<DefId, Vec<Body>> {
-        let mut tables = self.0.borrow_mut();
-        let local_items:stable_mir::CrateItems = tables.tcx.mir_keys(()).iter().map(|item| tables.crate_item(item.to_def_id())).collect();
-        let mut map = FxHashMap::default();
-
-        for item in local_items {
-            let def_id = tables[item.0];
-            let idx_vec = tables.tcx.promoted_mir(def_id);
-
-            let mut stable_vec:Vec<Body> = Vec::new();
-            for body in idx_vec {
-                stable_vec.push(body.stable(&mut tables));
-            }
-            
-            map.insert(item.0, stable_vec);
-        }
-        map
     }
 
     fn foreign_modules(&self, crate_num: CrateNum) -> Vec<stable_mir::ty::ForeignModuleDef> {

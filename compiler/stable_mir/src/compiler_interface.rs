@@ -33,9 +33,6 @@ pub trait Context {
     fn mir_body(&self, item: DefId) -> mir::Body;
     /// Check whether the body of a function is available.
     fn has_body(&self, item: DefId) -> bool;
-    // fn promoted(&self, item: DefId);
-    fn has_promoted(&self, def: DefId) -> bool;
-    fn get_all_promoted(&self) -> FxHashMap<DefId, Vec<Body>>;
     fn foreign_modules(&self, crate_num: CrateNum) -> Vec<ForeignModuleDef>;
     fn foreign_module(&self, mod_def: ForeignModuleDef) -> ForeignModule;
     fn foreign_items(&self, mod_def: ForeignModuleDef) -> Vec<ForeignDef>;
