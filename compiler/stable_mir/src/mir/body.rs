@@ -14,7 +14,7 @@ use std::io;
 ///     let _x = 20 + 22;
 /// }
 /// ```
-/// MIR:```
+/// MIR:
 /// fn main() -> () { // <-- NOT THE NAME, BUT THE ARGS
 ///     let mut _0: ();                           // <-- THIS
 ///     let _1: i32;                              // <-- THIS
@@ -27,7 +27,6 @@ use std::io;
 ///         return;                               // <-- THIS
 ///     }                                         // <-- THIS
 /// }
-/// ```
 #[derive(Clone, Debug)]
 pub struct Body {
     pub blocks: Vec<BasicBlock>,
@@ -151,13 +150,13 @@ pub struct LocalDecl {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-/// A BasicBlock is labelled as bb<UINT>, and contains 0 or more Statements, and a Terminator.
+/// A BasicBlock is labelled as `bb<UINT>`, and contains 0 or more Statements, and a Terminator.
 /// Rust: ```
 /// fn main() {
 ///     let _x = 20 + 22;
 /// }
 /// ```
-/// MIR:```
+/// MIR:
 /// fn main() -> () {       // <-- NOT THIS
 ///     let mut _0: ();     // <-- NOT THIS
 ///     let _1: i32;        // <-- NOT THIS
@@ -170,7 +169,6 @@ pub struct LocalDecl {
 ///         return;                               // <-- THIS
 ///     }                                         // <-- THIS
 /// }
-/// ```
 pub struct BasicBlock {
     pub statements: Vec<Statement>,
     pub terminator: Terminator,
@@ -184,7 +182,7 @@ pub struct BasicBlock {
 ///     let _x = 20 + 22;
 /// }
 /// ```
-/// MIR:```
+/// MIR:
 /// fn main() -> () {       // <-- NOT THIS
 ///     let mut _0: ();     // <-- NOT THIS
 ///     let _1: i32;        // <-- NOT THIS
@@ -197,7 +195,6 @@ pub struct BasicBlock {
 ///         return;                               // <-- THIS
 ///     }
 /// }
-/// ```
 pub struct Terminator {
     pub kind: TerminatorKind,
     pub span: Span,
@@ -534,7 +531,7 @@ pub enum NonDivergingIntrinsic {
 ///     let _x = 20 + 22;
 /// }
 /// ```
-/// MIR:```
+/// MIR:
 /// fn main() -> () {       // <-- NOT THIS
 ///     let mut _0: ();     // <-- NOT THIS
 ///     let _1: i32;        // <-- NOT THIS
@@ -547,7 +544,6 @@ pub enum NonDivergingIntrinsic {
 ///         return;                               // <-- NOT THIS
 ///     }
 /// }
-/// ```
 pub struct Statement {
     pub kind: StatementKind,
     pub span: Span,

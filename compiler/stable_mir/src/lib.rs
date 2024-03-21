@@ -128,7 +128,7 @@ crate_def! {
     ///     let _x = 20 + 22;
     /// }
     /// ```
-    /// MIR:```
+    /// MIR:
     /// fn main() -> () {                             // <-- THIS ALL TOGETHER IS 1 Fn CrateItem
     ///     let mut _0: ();                           // <-- THIS
     ///     let _1: i32;                              // <-- THIS
@@ -141,7 +141,6 @@ crate_def! {
     ///         return;                               // <-- THIS
     ///     }                                         // <-- THIS
     /// }                                             // <-- THIS
-    /// ```
     pub CrateItem;
 }
 
