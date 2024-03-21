@@ -119,29 +119,29 @@ pub enum CtorKind {
 
 pub type Filename = String;
 
-/// The MIR items belonging to a CrateDef. They can be of 4 kinds (ItemKind),
-/// `Fn`, `Static`, `Const`, `Ctor`.
-/// Rust: ```
-/// fn main() {
-///     let _x = 20 + 22;
-/// }
-/// ```
-/// MIR:```
-/// fn main() -> () {                             // <-- THIS ALL TOGETHER IS 1 Fn CrateItem
-///     let mut _0: ();                           // <-- THIS
-///     let _1: i32;                              // <-- THIS
-///     scope 1 {                                 // <-- THIS
-///         debug _x => _1;                       // <-- THIS
-///     }                                         // <-- THIS
-///                                               // <-- THIS
-///     bb0: {                                    // <-- THIS
-///         _1 = Add(const 20_i32, const 22_i32); // <-- THIS
-///         return;                               // <-- THIS
-///     }                                         // <-- THIS
-/// }                                             // <-- THIS
-/// ```
 crate_def! {
     /// Holds information about an item in a crate.
+    /// The MIR items belonging to a CrateDef. They can be of 4 kinds (ItemKind),
+    /// `Fn`, `Static`, `Const`, `Ctor`.
+    /// Rust: ```
+    /// fn main() {
+    ///     let _x = 20 + 22;
+    /// }
+    /// ```
+    /// MIR:```
+    /// fn main() -> () {                             // <-- THIS ALL TOGETHER IS 1 Fn CrateItem
+    ///     let mut _0: ();                           // <-- THIS
+    ///     let _1: i32;                              // <-- THIS
+    ///     scope 1 {                                 // <-- THIS
+    ///         debug _x => _1;                       // <-- THIS
+    ///     }                                         // <-- THIS
+    ///                                               // <-- THIS
+    ///     bb0: {                                    // <-- THIS
+    ///         _1 = Add(const 20_i32, const 22_i32); // <-- THIS
+    ///         return;                               // <-- THIS
+    ///     }                                         // <-- THIS
+    /// }                                             // <-- THIS
+    /// ```
     pub CrateItem;
 }
 
