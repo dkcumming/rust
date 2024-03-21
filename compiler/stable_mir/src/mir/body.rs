@@ -6,6 +6,28 @@ use crate::ty::{
 use crate::{Error, Opaque, Span, Symbol};
 use std::io;
 /// The SMIR representation of a single function.
+/// This includes the declartions of locals, the scope tree (printed in `--emit mir` but not in `--emit smir`), 
+/// and the basic blocks. The Body does not include the function name of the function it belongs to, but it does
+/// include the arguments of the signature.
+/// Rust: ```
+/// fn main() {
+///     let _x = 20 + 22;
+/// }
+/// ```
+/// MIR:```
+/// fn main() -> () { // <-- NOT THE NAME, BUT THE ARGS
+///     let mut _0: ();                           // <-- THIS
+///     let _1: i32;                              // <-- THIS
+///     scope 1 {                                 // <-- THIS
+///         debug _x => _1;                       // <-- THIS
+///     }                                         // <-- THIS
+///                                               // <-- THIS
+///     bb0: {                                    // <-- THIS
+///         _1 = Add(const 20_i32, const 22_i32); // <-- THIS
+///         return;                               // <-- THIS
+///     }                                         // <-- THIS
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct Body {
     pub blocks: Vec<BasicBlock>,
@@ -129,12 +151,53 @@ pub struct LocalDecl {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
+/// A BasicBlock is labelled as bb<UINT>, and contains 0 or more Statements, and a Terminator.
+/// Rust: ```
+/// fn main() {
+///     let _x = 20 + 22;
+/// }
+/// ```
+/// MIR:```
+/// fn main() -> () {       // <-- NOT THIS
+///     let mut _0: ();     // <-- NOT THIS
+///     let _1: i32;        // <-- NOT THIS
+///     scope 1 {           // <-- NOT THIS
+///         debug _x => _1; // <-- NOT THIS
+///     }                   // <-- NOT THIS
+///
+///     bb0: {                                    // <-- THIS
+///         _1 = Add(const 20_i32, const 22_i32); // <-- THIS
+///         return;                               // <-- THIS
+///     }                                         // <-- THIS
+/// }
+/// ```
 pub struct BasicBlock {
     pub statements: Vec<Statement>,
     pub terminator: Terminator,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// A Terminator is the final instruction in a BasicBlock, it may point to other BasicBlocks 
+/// (based on a branch condition) where exectution will continue. Or it may return from the encapsulating function.
+/// Rust: ```
+/// fn main() {
+///     let _x = 20 + 22;
+/// }
+/// ```
+/// MIR:```
+/// fn main() -> () {       // <-- NOT THIS
+///     let mut _0: ();     // <-- NOT THIS
+///     let _1: i32;        // <-- NOT THIS
+///     scope 1 {           // <-- NOT THIS
+///         debug _x => _1; // <-- NOT THIS
+///     }                   // <-- NOT THIS
+///
+///     bb0: {                                    // <-- NOT THIS
+///         _1 = Add(const 20_i32, const 22_i32); // <-- NOT THIS
+///         return;                               // <-- THIS
+///     }
+/// }
+/// ```
 pub struct Terminator {
     pub kind: TerminatorKind,
     pub span: Span,
@@ -465,6 +528,26 @@ pub enum NonDivergingIntrinsic {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// A Statement is some kind of computation inside a BasicBlock which is not terminal to the BasicBlock.
+/// Rust: ```
+/// fn main() {
+///     let _x = 20 + 22;
+/// }
+/// ```
+/// MIR:```
+/// fn main() -> () {       // <-- NOT THIS
+///     let mut _0: ();     // <-- NOT THIS
+///     let _1: i32;        // <-- NOT THIS
+///     scope 1 {           // <-- NOT THIS
+///         debug _x => _1; // <-- NOT THIS
+///     }                   // <-- NOT THIS
+///
+///     bb0: {                                    // <-- NOT THIS
+///         _1 = Add(const 20_i32, const 22_i32); // <-- THIS
+///         return;                               // <-- NOT THIS
+///     }
+/// }
+/// ```
 pub struct Statement {
     pub kind: StatementKind,
     pub span: Span,

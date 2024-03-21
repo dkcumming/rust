@@ -472,25 +472,46 @@ pub struct TypeAndMut {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RigidTy {
+    /// `bool` e.g. `let x:bool = true;`
     Bool,
+    /// `char` e.g. `let x:char = 'c';`
     Char,
+    /// `i...` see IntTy
     Int(IntTy),
+    /// `u...` see UntTy
     Uint(UintTy),
+    /// `f...` see FloatTy
     Float(FloatTy),
+    /// TODO!
     Adt(AdtDef, GenericArgs),
+    /// TODO!
     Foreign(ForeignDef),
+    /// `str` e.g. `let x:&str = "abcd;"` NOTE: `str` is only available via borrow
     Str,
+    /// `[<TYPE>; <EXP>]` e.g. `let x:[u32; 2] = [2,3];`
     Array(Ty, Const),
+    /// `[<TYPE>]` e.g. `let x:&[u32] = &[2,3,1];` NOTE: slices are only available via some reference
     Slice(Ty),
+    /// `*const <TYPE>` or `*mut <TYPE>` depending on mutalbility. e.g. `let x:*const i32 = &42;` or `let x:*mut i32 = &mut 42;` 
     RawPtr(Ty, Mutability),
+    /// `&<TYPE>` or `&mut <TYPE>` depending on mutalbility. e.g. `let x:&i32 = &42;` or `let x:&mut i32 = &mut 42;` 
     Ref(Region, Ty, Mutability),
+    /// ``
     FnDef(FnDef, GenericArgs),
+    /// `fn(<TYPES>) -> <TYPE>` e.g. 
+    /// ```
+    /// fn abcd(x:u32) -> u32 { x }
+    /// let _y:fn(u32) -> u32 = abcd;
+    /// ```  
     FnPtr(PolyFnSig),
+    /// Anonymous function e.g. `let x = |a:u32, b:u32| a + b;` 
     Closure(ClosureDef, GenericArgs),
     // FIXME(stable_mir): Movability here is redundant
     Coroutine(CoroutineDef, GenericArgs, Movability),
     Dynamic(Vec<Binder<ExistentialPredicate>>, Region, DynKind),
+    /// `!` e.g. `fn foo() -> ! { panic!() }`
     Never,
+    /// `()`, or `(<TYPE>)`, or `(<TYPE1>, <TYPE2>)` etc. e.g. `let x:(i32, u32) = (2, 1);`
     Tuple(Vec<Ty>),
     CoroutineWitness(CoroutineWitnessDef, GenericArgs),
 }
@@ -510,11 +531,17 @@ impl From<RigidTy> for TyKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IntTy {
+    /// `isize` e.g. `let x:isize = 42;`
     Isize,
+    /// `i8` e.g. `let x:i8 = 42;`
     I8,
+    /// `i16` e.g. `let x:i16 = 42;`
     I16,
+    /// `i32` e.g. `let x:i32 = 42;`
     I32,
+    /// `i64` e.g. `let x:i64 = 42;`
     I64,
+    /// `i128` e.g. `let x:i128 = 42;`
     I128,
 }
 
@@ -533,11 +560,17 @@ impl IntTy {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UintTy {
+    /// `usize` e.g. `let x:usize = 42;`
     Usize,
+    /// `u8` e.g. `let x:u8 = 42;`
     U8,
+    /// `u16` e.g. `let x:u16 = 42;`
     U16,
+    /// `u32` e.g. `let x:u32 = 42;`
     U32,
+    /// `u64` e.g. `let x:u64 = 42;`
     U64,
+    /// `u128` e.g. `let x:u128 = 42;`
     U128,
 }
 
@@ -556,7 +589,9 @@ impl UintTy {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FloatTy {
+    /// `f32` e.g. `let x:f32 = 1.1;`
     F32,
+    /// `f64` e.g. `let x:f64 = 1.1;`
     F64,
 }
 
