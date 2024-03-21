@@ -4,7 +4,6 @@
 //! These APIs have no stability guarantee.
 
 use std::cell::Cell;
-use rustc_data_structures::fx::FxHashMap;
 
 use crate::abi::{FnAbi, Layout, LayoutShape};
 use crate::mir::alloc::{AllocId, GlobalAlloc};
