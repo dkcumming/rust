@@ -143,6 +143,13 @@ impl Body {
 type LocalDecls = Vec<LocalDecl>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+/// A LocalDecl is the declaration of a Local inside a Body, they are labelled as
+/// `_<UINT>` where the integer is the index of the local. `_0` is reserved for the 
+/// return location of the encapsulating Body, if args were provided to the Body, positions
+/// `_1` through to `_<ARG_COUNT + 1>` are the locations of the args.
+/// MIR:
+/// let _0: u32;
+/// let mut _1: bool; 
 pub struct LocalDecl {
     pub ty: Ty,
     pub span: Span,

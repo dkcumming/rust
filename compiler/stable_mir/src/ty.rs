@@ -207,6 +207,8 @@ pub struct Placeholder<T> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+/// MIR:
+/// `<FILENAME>:<START_LINE_NUMBER><START_COLUMN_NUMBER>: <FINISH_LINE_NUMBER><FINISH_COLUMN_NUMBER>`
 pub struct Span(usize);
 
 impl Debug for Span {
@@ -482,9 +484,11 @@ pub enum RigidTy {
     Uint(UintTy),
     /// `f...` see FloatTy
     Float(FloatTy),
-    /// TODO!
+    /// `struct` e.g. `struct Example { x:u32 }`
+    /// `enum`   e.g. `enum   Example { X }`
+    /// `union`  e.g. `union  Example { x:u32, y:i32 }`
     Adt(AdtDef, GenericArgs),
-    /// TODO!
+    /// TODO! Kinds are `Fn`, `Static`, `Type`
     Foreign(ForeignDef),
     /// `str` e.g. `let x:&str = "abcd;"` NOTE: `str` is only available via borrow
     Str,
@@ -496,7 +500,7 @@ pub enum RigidTy {
     RawPtr(Ty, Mutability),
     /// `&<TYPE>` or `&mut <TYPE>` depending on mutalbility. e.g. `let x:&i32 = &42;` or `let x:&mut i32 = &mut 42;` 
     Ref(Region, Ty, Mutability),
-    /// ``
+    /// TODO!
     FnDef(FnDef, GenericArgs),
     /// `fn(<TYPES>) -> <TYPE>` e.g. 
     /// ```
@@ -507,12 +511,17 @@ pub enum RigidTy {
     /// Anonymous function e.g. `let x = |a:u32, b:u32| a + b;` 
     Closure(ClosureDef, GenericArgs),
     // FIXME(stable_mir): Movability here is redundant
+    /// TODO! nightly only feature for async
     Coroutine(CoroutineDef, GenericArgs, Movability),
+    /// `dyn ...` 
+    /// e.g. `fn example(_x: Box<dyn Iterator<Item = u32>>) {}`
+    ///                          ^^^^^^^^^^^^^^^^^^^^^^^^
     Dynamic(Vec<Binder<ExistentialPredicate>>, Region, DynKind),
     /// `!` e.g. `fn foo() -> ! { panic!() }`
     Never,
     /// `()`, or `(<TYPE>)`, or `(<TYPE1>, <TYPE2>)` etc. e.g. `let x:(i32, u32) = (2, 1);`
     Tuple(Vec<Ty>),
+    /// TODO! Coroutines are nightly only feature
     CoroutineWitness(CoroutineWitnessDef, GenericArgs),
 }
 
