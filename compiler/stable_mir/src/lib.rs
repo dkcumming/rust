@@ -150,6 +150,10 @@ impl CrateItem {
     pub fn emit_mir<W: io::Write>(&self, w: &mut W) -> io::Result<()> {
         self.body().dump(w, &self.name())
     }
+
+    pub fn extract(&self) -> String {
+        "TODO".into()
+    }
 }
 
 /// Return the function where execution starts if the current

@@ -370,12 +370,48 @@ impl BinOp {
             }
         }
     }
+
+    fn extract(&self) -> String {
+        match &self {
+            BinOp::Add => "Add".into(),
+            BinOp::AddUnchecked => "AddUnchecked".into(),
+            BinOp::Sub => "Sub".into(),
+            BinOp::SubUnchecked => "SubUnchecked".into(),
+            BinOp::Mul => "Mul".into(),
+            BinOp::MulUnchecked => "MulUnchecked".into(),
+            BinOp::Div => "Div".into(),
+            BinOp::Rem => "Rem".into(),
+            BinOp::BitXor => "BitXor".into(),
+            BinOp::BitAnd => "BitAnd".into(),
+            BinOp::BitOr => "BitOr".into(),
+            BinOp::Shl => "Shl".into(),
+            BinOp::ShlUnchecked => "ShlUnchecked".into(),
+            BinOp::Shr => "Shr".into(),
+            BinOp::ShrUnchecked => "ShrUnchecked".into(),
+            BinOp::Eq => "Eq".into(),
+            BinOp::Lt => "Lt".into(),
+            BinOp::Le => "Le".into(),
+            BinOp::Ne => "Ne".into(),
+            BinOp::Ge => "Ge".into(),
+            BinOp::Gt => "Gt".into(),
+            BinOp::Offset => "Offset".into(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UnOp {
     Not,
     Neg,
+}
+
+impl UnOp {
+    fn extract(&self) -> String {
+        match self {
+            UnOp::Not => "Not".into(),
+            UnOp::Neg => "Neg".into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -416,6 +452,18 @@ pub enum FakeReadCause {
     ForIndex,
 }
 
+impl FakeReadCause {
+    pub fn extract(&self) -> String {
+        match &self {
+            FakeReadCause::ForMatchGuard => "ForMatchGuard".into(),
+            FakeReadCause::ForMatchedPlace(opaque) => format!("ForMatchedPlace(Opaque: {})", opaque),
+            FakeReadCause::ForGuardBinding => "ForGuardBinding".into(),
+            FakeReadCause::ForLet(opaque) => format!("ForLet(Opaque: {})", opaque),
+            FakeReadCause::ForIndex => "ForIndex".into(),
+        }
+    }
+}
+
 /// Describes what kind of retag is to be performed
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum RetagKind {
@@ -423,6 +471,17 @@ pub enum RetagKind {
     TwoPhase,
     Raw,
     Default,
+}
+
+impl RetagKind {
+    pub fn extract(&self) -> String {
+        match &self {
+            RetagKind::FnEntry => "FnEntry".into(),
+            RetagKind::TwoPhase => "TwoPhase".into(),
+            RetagKind::Raw => "Raw".into(),
+            RetagKind::Default => "Default".into(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -433,11 +492,28 @@ pub enum Variance {
     Bivariant,
 }
 
+impl Variance {
+    pub fn extract(&self) -> String {
+        match &self {
+            Variance::Covariant => "Covariant".into(),
+            Variance::Invariant => "Invariant".into(),
+            Variance::Contravariant => "Contravariant".into(),
+            Variance::Bivariant => "Bivariant".into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CopyNonOverlapping {
     pub src: Operand,
     pub dst: Operand,
     pub count: Operand,
+}
+
+impl CopyNonOverlapping {
+    pub fn extract(&self) -> String {
+        format!("src: {}, dst: {}, count: {}", self.src.extract(), self.dst.extract(), self.count.extract())
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -446,10 +522,25 @@ pub enum NonDivergingIntrinsic {
     CopyNonOverlapping(CopyNonOverlapping),
 }
 
+impl NonDivergingIntrinsic {
+    pub fn extract(&self) -> String {
+        match &self {
+            NonDivergingIntrinsic::Assume(op) => format!("Assume(Operand: {})", op.extract()),
+            NonDivergingIntrinsic::CopyNonOverlapping(inner) => format!("CopyNonOverlapping({})", inner.extract()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Statement {
     pub kind: StatementKind,
     pub span: Span,
+}
+
+impl Statement {
+    pub fn extract(&self) -> String {
+        format!("Statement(StatementKind: {}, Span: {:?})", self.kind.extract(), self.span)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -467,6 +558,26 @@ pub enum StatementKind {
     Intrinsic(NonDivergingIntrinsic),
     ConstEvalCounter,
     Nop,
+}
+
+impl StatementKind {
+    pub fn extract(&self) -> String {
+        match &self {
+            StatementKind::Assign(place, rvalue) => format!("Assign(Place: {}, RValue: {})", place.extract(), rvalue.extract()),
+            StatementKind::FakeRead(cause, place) => format!("FakeRead(FakeReadCause: {}, Place: {})", cause.extract(), place.extract()),
+            StatementKind::SetDiscriminant { place, variant_index } => format!("SetDiscriminant(Place: {}, VariantIndex: {})", place.extract(), variant_index.extract()),
+            StatementKind::Deinit(place) => format!("Deinit(Place: {})", place.extract()),
+            StatementKind::StorageLive(local) => format!("StorageLive(Local: {})", local),
+            StatementKind::StorageDead(local) => format!("StorageDead(Local: {})", local),
+            StatementKind::Retag(kind, place) => format!("Retag(RetagKind: {}, Place: {})", kind.extract(), place.extract()),
+            StatementKind::PlaceMention(place) => format!("PlaceMention(Place: {})", place.extract()),
+            StatementKind::AscribeUserType { place, projections, variance } => format!("AscribeUserType(Place: {}, Projections: {}, Variance: {})", place.extract(), projections.extract(), variance.extract()),
+            StatementKind::Coverage(opaque) => format!("Coverage(Opaque: {})", opaque),
+            StatementKind::Intrinsic(intrinsic) => format!("Intrinsic(NonDivergingIntrinsic: {})", intrinsic.extract()),
+            StatementKind::ConstEvalCounter => "ConstEvalCounter".into(),
+            StatementKind::Nop => "Nop".into(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -637,6 +748,26 @@ impl Rvalue {
             Rvalue::CopyForDeref(place) => place.ty(locals),
         }
     }
+
+    pub fn extract(&self) -> String {
+        match &self {
+            Rvalue::AddressOf(mutability, place) => format!("AddressOf(Mutability: {}, Place: {})", mutability.extract(), place.extract()),
+            Rvalue::Aggregate(kind, _ops) => format!("Aggregate(AggregateKind: {}, Operands: {})", kind.extract(), "TODO"),
+            Rvalue::BinaryOp(binop, op1, op2) => format!("BinaryOp(BinOp: {}, Operand1: {}, Operand2: {})", binop.extract(), op1.extract(), op2.extract()),
+            Rvalue::Cast(kind, op, ty) => format!("Cast(CastKind: {}, Operand: {}, Ty: {})", kind.extract(), op.extract(), ty.extract()),
+            Rvalue::CheckedBinaryOp(binop, op1, op2) => format!("CheckedBinaryOp(BinOp: {}, Operand1: {}, Operand2: {})", binop.extract(), op1.extract(), op2.extract()),
+            Rvalue::CopyForDeref(place) => format!("CopyForDeref(Place: {})", place.extract()),
+            Rvalue::Discriminant(place) => format!("Discriminant(Place: {})", place.extract()),
+            Rvalue::Len(place) => format!("Len(Place: {})", place.extract()),
+            Rvalue::Ref(region, kind, place) => format!("Ref(Region: {}, BorrowKind: {}, Place: {})", region.extract(), kind.extract(), place.extract()),
+            Rvalue::Repeat(op, c) => format!("Repeat(Operand: {}, Const: {})", op.extract(), c.extract()),
+            Rvalue::ShallowInitBox(op, ty) => format!("ShallowInitBox(Operand: {}, Ty: {})", op.extract(), ty.extract()),
+            Rvalue::ThreadLocalRef(item) => format!("ThreadLocalRef(CrateItem: {})", item.extract()),
+            Rvalue::NullaryOp(nullop, ty) => format!("NullaryOp(NullOp: {}, Ty: {})", nullop.extract(), ty.extract()),
+            Rvalue::UnaryOp(unop, op) => format!("UnaryOp(UnOp: {}, Operand: {})", unop.extract(), op.extract()),
+            Rvalue::Use(op) => format!("Use(Operand: {})", op.extract()),
+        }
+    } 
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -649,11 +780,29 @@ pub enum AggregateKind {
     Coroutine(CoroutineDef, GenericArgs, Movability),
 }
 
+impl AggregateKind {
+    fn extract(&self) -> String {
+        match self {
+            AggregateKind::Array(_ty) => "TODO".into(),
+            AggregateKind::Tuple => "Tuple".into(),
+            AggregateKind::Adt(_, _, _, _, _) => "TODO".into(),
+            AggregateKind::Closure(_, _) => "TODO".into(),
+            AggregateKind::Coroutine(_, _, _) => "TODO".into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Operand {
     Copy(Place),
     Move(Place),
     Constant(Constant),
+}
+
+impl Operand {
+    fn extract(&self) -> String {
+        "TODO".into()
+    }
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -823,6 +972,12 @@ pub struct UserTypeProjection {
     pub projection: Opaque,
 }
 
+impl UserTypeProjection {
+    pub fn extract(&self) -> String {
+        "TODO".into()
+    }
+}
+
 pub type Local = usize;
 
 pub const RETURN_LOCAL: Local = 0;
@@ -917,6 +1072,14 @@ impl BorrowKind {
             BorrowKind::Fake => Mutability::Not,
         }
     }
+
+    fn extract(&self) -> String {
+        match &self {
+            BorrowKind::Shared => "Shared".into(),
+            BorrowKind::Fake => "Fake".into(),
+            BorrowKind::Mut { kind } => format!("Mut(MutBorrowKind: {})", kind.extract()),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -926,10 +1089,29 @@ pub enum MutBorrowKind {
     ClosureCapture,
 }
 
+impl MutBorrowKind {
+    fn extract(&self) -> String {
+        match &self {
+            MutBorrowKind::Default => "Default".into(),
+            MutBorrowKind::TwoPhaseBorrow => "TwoPhaseBorrow".into(),
+            MutBorrowKind::ClosureCapture => "ClosureCapture".into(),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Mutability {
     Not,
     Mut,
+}
+
+impl Mutability {
+    fn extract(&self) -> String {
+        match self {
+            Mutability::Not => "Not".into(),
+            Mutability::Mut => "Mut".into(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -980,6 +1162,24 @@ pub enum CastKind {
     Transmute,
 }
 
+impl CastKind {
+    fn extract(&self) -> String {
+        match &self {
+            CastKind::PointerExposeAddress => "PointerExposeAddress".into(),
+            CastKind::PointerFromExposedAddress => "PointerFromExposedAddress".into(),
+            CastKind::PointerCoercion(_) => format!("PointerCoercion({})", "TODO"),
+            CastKind::DynStar => "DynStar".into(),
+            CastKind::IntToInt => "IntToInt".into(),
+            CastKind::FloatToInt => "FloatToInto".into(),
+            CastKind::FloatToFloat => "FloatToFloat".into(),
+            CastKind::IntToFloat => "IntToFloat".into(),
+            CastKind::PtrToPtr => "PtrToPtr".into(),
+            CastKind::FnPtrToPtr => "FnPtrToPtr".into(),
+            CastKind::Transmute => "Transmute".into(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NullOp {
     /// Returns the size of a value of that type.
@@ -990,6 +1190,17 @@ pub enum NullOp {
     OffsetOf(Vec<(VariantIdx, FieldIdx)>),
     /// cfg!(debug_assertions), but at codegen time
     UbChecks,
+}
+
+impl NullOp {
+    fn extract(&self) -> String {
+        match &self {
+            NullOp::SizeOf => "SizeOf".into(),
+            NullOp::AlignOf => "AlignOf".into(),
+            NullOp::OffsetOf(_) => format!("OffsetOf({})", "TODO"),
+            NullOp::UbChecks => "UbChecks".into(),
+        }
+    }
 }
 
 impl Operand {
@@ -1023,6 +1234,10 @@ impl Place {
     pub fn ty(&self, locals: &[LocalDecl]) -> Result<Ty, Error> {
         let start_ty = locals[self.local].ty;
         self.projection.iter().fold(Ok(start_ty), |place_ty, elem| elem.ty(place_ty?))
+    }
+
+    fn extract(&self) -> String {
+        format!("Place(Local: {}, projection: {})", self.local, "TODO") // TODO! Projection
     }
 }
 

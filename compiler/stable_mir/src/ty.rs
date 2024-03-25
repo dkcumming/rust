@@ -97,6 +97,10 @@ impl Ty {
     pub fn kind(&self) -> TyKind {
         with(|context| context.ty_kind(*self))
     }
+
+    pub fn extract(&self) -> String {
+        "TODO".into()
+    }
 }
 
 /// Represents a constant in MIR or from the Type system.
@@ -160,6 +164,10 @@ impl Const {
     pub fn try_from_uint(value: u128, uint_ty: UintTy) -> Result<Const, Error> {
         with(|cx| cx.try_new_const_uint(value, uint_ty))
     }
+
+    pub fn extract(&self) -> String {
+        "TODO".into()
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,6 +178,12 @@ type Ident = Opaque;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Region {
     pub kind: RegionKind,
+}
+
+impl Region {
+    pub fn extract(&self) -> String {
+        "TODO".into()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1400,3 +1414,9 @@ index_impl!(Span);
 pub struct VariantIdx(usize);
 
 index_impl!(VariantIdx);
+
+impl VariantIdx {
+    pub fn extract(&self) -> String {
+        "TODO".into()
+    }
+}
