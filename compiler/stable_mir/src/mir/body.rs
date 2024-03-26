@@ -116,6 +116,17 @@ pub struct BasicBlock {
     pub terminator: Terminator,
 }
 
+impl BasicBlock {
+    pub fn extract(&self) -> String {
+        let mut statements: String = "[".into();
+        self.statements
+            .iter()
+            .for_each(|statement| statements.push_str(&format!("{}, ", statement.extract())));
+        statements.push_str("]");
+        format!("BasicBlock(Statements: {}, Terminator: {})", statements, self.terminator.extract())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Terminator {
     pub kind: TerminatorKind,
