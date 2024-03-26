@@ -152,7 +152,7 @@ impl CrateItem {
     }
 
     pub fn extract(&self) -> String {
-        "TODO".into()
+        self.body().extract(&self.name())
     }
 }
 

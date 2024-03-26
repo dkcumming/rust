@@ -99,6 +99,16 @@ impl Body {
     pub fn spread_arg(&self) -> Option<Local> {
         self.spread_arg
     }
+
+    pub fn extract(&self, fn_name: &str) -> String {
+        let mut blocks: String = "[".into();
+        self.blocks
+            .iter()
+            .enumerate()
+            .for_each(|(index, bb)| blocks.push_str(&format!("(Index {}, {}), ", index, bb.extract())));
+        blocks.push_str("]");
+        format!("Body(Name: {}, Blocks: {})", fn_name, blocks)
+    }
 }
 
 type LocalDecls = Vec<LocalDecl>;
