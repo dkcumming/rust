@@ -2921,12 +2921,13 @@ fn parse_pretty(early_dcx: &EarlyDiagCtxt, unstable_opts: &UnstableOptions) -> O
         "thir-flat" => ThirFlat,
         "mir" => Mir,
         "stable-mir" => StableMir,
+        "kmir" => KMir,
         "mir-cfg" => MirCFG,
         name => early_dcx.early_fatal(format!(
             "argument to `unpretty` must be one of `normal`, `identified`, \
                             `expanded`, `expanded,identified`, `expanded,hygiene`, \
                             `ast-tree`, `ast-tree,expanded`, `hir`, `hir,identified`, \
-                            `hir,typed`, `hir-tree`, `thir-tree`, `thir-flat`, `mir`, `stable-mir`, or \
+                            `hir,typed`, `hir-tree`, `thir-tree`, `thir-flat`, `mir`, `stable-mir`, `kmir`, or \
                             `mir-cfg`; got {name}"
         )),
     };
@@ -3103,6 +3104,8 @@ pub enum PpMode {
     MirCFG,
     /// `-Zunpretty=stable-mir`
     StableMir,
+    /// `-Zunpretty=kmir`
+    KMir,
 }
 
 impl PpMode {
@@ -3120,7 +3123,8 @@ impl PpMode {
             | ThirFlat
             | Mir
             | MirCFG
-            | StableMir => true,
+            | StableMir 
+            | KMir => true,
         }
     }
     pub fn needs_hir(&self) -> bool {
@@ -3128,13 +3132,13 @@ impl PpMode {
         match *self {
             Source(_) | AstTree | AstTreeExpanded => false,
 
-            Hir(_) | HirTree | ThirTree | ThirFlat | Mir | MirCFG | StableMir => true,
+            Hir(_) | HirTree | ThirTree | ThirFlat | Mir | MirCFG | StableMir | KMir => true,
         }
     }
 
     pub fn needs_analysis(&self) -> bool {
         use PpMode::*;
-        matches!(*self, Hir(PpHirMode::Typed) | Mir | StableMir | MirCFG | ThirTree | ThirFlat)
+        matches!(*self, Hir(PpHirMode::Typed) | Mir | StableMir | KMir | MirCFG | ThirTree | ThirFlat)
     }
 }
 
