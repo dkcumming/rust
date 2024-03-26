@@ -126,6 +126,10 @@ impl Terminator {
     pub fn successors(&self) -> Successors {
         self.kind.successors()
     }
+
+    pub fn extract(&self) -> String {
+        format!("Terminator(TerminatorKind: {}, Span: {:?})", self.kind.extract(), self.span)
+    }
 }
 
 pub type Successors = Vec<BasicBlockIdx>;
@@ -218,6 +222,48 @@ impl TerminatorKind {
             | TerminatorKind::InlineAsm { ref unwind, .. } => Some(unwind),
         }
     }
+
+    pub fn extract(&self) -> String {
+        match &self {
+            TerminatorKind::Goto { target } => format!("Goto(Target: {})", target),
+            TerminatorKind::SwitchInt { discr, targets } => format!("SwitchInt(Operand: {}, Targets: {})", discr.extract(), targets.extract()),
+            TerminatorKind::Resume => "Resume".into(),
+            TerminatorKind::Abort => "Abort".into(),
+            TerminatorKind::Return => "Return".into(),
+            TerminatorKind::Unreachable => "Unreachable".into(),
+            TerminatorKind::Drop { place, target, unwind } => format!("Drop(Place: {}, Target: {}, Unwind: {})", place.extract(), target, unwind.extract()),
+            TerminatorKind::Call { func, args, destination, target, unwind } => 
+                format!("Call(Function: {}, Args: {}, Dest: {}, Target: {}, Unwind: {})", func.extract(), {
+                    let mut arg_str:String = "[".into();
+                    args.iter()
+                        .for_each(|op| arg_str.push_str(&format!("{}, ", op.extract())));
+                    arg_str.push_str("]");
+                    arg_str
+                }, destination.extract(), {
+                    match &target {
+                        None => "None".into(),
+                        Some(bb) => format!("Some({bb})"),
+                    }
+                }, unwind.extract()),
+            TerminatorKind::Assert { cond, expected, msg, target, unwind } => 
+                format!("Assert!(Condition: {}, Expected: {}, Message: {}, Target {}, Unwind: {})",
+                    cond.extract(), expected, msg.extract(), target, unwind.extract()
+                ),
+            TerminatorKind::InlineAsm { template, operands, options, line_spans, destination, unwind } => 
+                format!("InlineAsm(Template: {}, Operands: {}, Options: {}, LineSpans: {}, Destination: {}, Unwind: {})", template, {
+                    let mut ops: String = "[".into();
+                    operands.iter()
+                            .for_each(|asm| ops.push_str(&format!("{}, ", asm.extract())));
+                    ops.push_str("]");
+                    ops
+                }, options, line_spans, {
+                    match &destination {
+                        Some(bb) => format!("Some({})", bb),
+                        None => "None".into(),
+                    }
+                }, unwind.extract()),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -229,12 +275,37 @@ pub struct InlineAsmOperand {
     pub raw_rpr: String,
 }
 
+impl InlineAsmOperand {
+    pub fn extract(&self) -> String {
+        let in_str = match &self.in_value {
+            Some(op) => format!("Some({})", op.extract()),
+            None => "None".into(),
+        };
+        let out_str = match &self.out_place {
+            Some(place) => format!("Some({})", place.extract()),
+            None => "None".into(),
+        };
+        format!("InlineAsmOperand(InValue: {}, OutPlace: {}, RawRpr: {})", in_str, out_str, &self.raw_rpr)
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum UnwindAction {
     Continue,
     Unreachable,
     Terminate,
     Cleanup(BasicBlockIdx),
+}
+
+impl UnwindAction {
+    pub fn extract(&self) -> String {
+        match &self {
+            UnwindAction::Continue => "Continue".into(),
+            UnwindAction::Unreachable => "Unreachable".into(),
+            UnwindAction::Terminate => "Terminate".into(),
+            UnwindAction::Cleanup(bb) => format!("Cleanup(BasicBlockIdx: {})", bb),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -302,6 +373,19 @@ impl AssertMessage {
             AssertMessage::MisalignedPointerDereference { .. } => {
                 Ok("misaligned pointer dereference")
             }
+        }
+    }
+
+    pub fn extract(&self) -> String {
+        match &self {
+            AssertMessage::BoundsCheck { len, index } => format!("BoundsCheck(Len: {}, Index: {})", len.extract(), index.extract()),
+            AssertMessage::Overflow(binop, op1, op2) => format!("Overflow(BinOp: {}, Operand1: {}, Operand2: {})", binop.extract(), op1.extract(), op2.extract()),
+            AssertMessage::OverflowNeg(op) => format!("OverflowNeg(Operand: {})", op.extract()),
+            AssertMessage::DivisionByZero(op) => format!("DivisionByZero(Operand: {})", op.extract()),
+            AssertMessage::RemainderByZero(op) => format!("RemainderByZero(Operand: {})", op.extract()),
+            AssertMessage::ResumedAfterReturn(kind) => format!("ResumedAfterPanic(CoroutineKind: {})", kind.extract()),
+            AssertMessage::ResumedAfterPanic(kind) => format!("ResumedAfterPanic(CoroutineKind: {})", kind.extract()),
+            AssertMessage::MisalignedPointerDereference { required, found } => format!("MisalignedPointerDereference(Required: {}, Found: {})", required.extract(), found.extract()),
         }
     }
 }
@@ -418,6 +502,12 @@ impl UnOp {
 pub enum CoroutineKind {
     Desugared(CoroutineDesugaring, CoroutineSource),
     Coroutine(Movability),
+}
+
+impl CoroutineKind {
+    pub fn extract(&self) -> String {
+        "TODO".into()
+    }
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -1042,6 +1132,14 @@ impl SwitchTargets {
     /// Create a new SwitchTargets from the given branches and `otherwise` target.
     pub fn new(branches: Vec<(u128, BasicBlockIdx)>, otherwise: BasicBlockIdx) -> SwitchTargets {
         SwitchTargets { branches, otherwise }
+    }
+
+    pub fn extract(&self) -> String {
+        let mut branches: String = "[".into();
+        self.branches()
+            .for_each(|(guard, bb)| branches.push_str(&format!("(Guard: {}, BasicBlockIdx: {}), ", guard, bb)));
+        branches.push_str("]");
+        format!("SwitchTargets(Branches: {}, Otherwise: {})", branches, self.otherwise())
     }
 }
 
